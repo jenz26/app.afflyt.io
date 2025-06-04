@@ -54,8 +54,8 @@ class App {
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
     // General rate limiting
-    const generalLimiter = createGeneralLimiter();
-    this.app.use(generalLimiter.middleware());
+    //const generalLimiter = createGeneralLimiter();
+    //this.app.use(generalLimiter.middleware());
   }
 
   private initializeRoutes(): void {
@@ -116,6 +116,15 @@ class App {
         }
       });
     });
+    // Debug: Print all registered routes
+if (process.env.NODE_ENV === 'development') {
+  console.log('🛣️  Registered routes:');
+  this.app._router.stack.forEach((layer: any) => {
+    if (layer.route) {
+      console.log(`  ${Object.keys(layer.route.methods).join(', ').toUpperCase()} ${layer.route.path}`);
+    }
+  });
+}
 
     // Future: Swagger documentation endpoint
     this.app.get('/docs', (req: Request, res: Response) => {

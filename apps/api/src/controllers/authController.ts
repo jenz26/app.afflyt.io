@@ -1,12 +1,10 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { Resend } from 'resend';
 import { Models } from '../models';
 import { User } from '../types';
 import { AuthRequest } from '../middleware/auth';
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendMagicLinkEmail, sendWelcomeEmail } from '../services/emailService';
 
 export class AuthController {
   constructor(private models: Models) {}
@@ -68,6 +66,11 @@ export class AuthController {
       // For MVP, we'll skip email verification and mark user as verified
       await this.models.user.updateById(user.id, { isEmailVerified: true });
 
+      // Send welcome email (non-blocking)
+      sendWelcomeEmail(email, 'it').catch(error => {
+        console.warn('Failed to send welcome email:', error);
+      });
+
       res.status(201).json({
         success: true,
         data: {
@@ -79,8 +82,7 @@ export class AuthController {
             role: user.role,
             isEmailVerified: true
           },
-          accessToken,
-          verificationToken // For future use
+          token: accessToken
         },
         message: 'User registered successfully',
         timestamp: new Date().toISOString()
@@ -148,7 +150,7 @@ export class AuthController {
             role: user.role,
             isEmailVerified: user.isEmailVerified
           },
-          accessToken
+          token: accessToken
         },
         message: 'Login successful',
         timestamp: new Date().toISOString()
@@ -165,7 +167,7 @@ export class AuthController {
   // Send magic link (for passwordless login)
   sendMagicLink = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { email } = req.body;
+      const { email, locale = 'it', returnUrl } = req.body;
 
       if (!email) {
         res.status(400).json({
@@ -175,50 +177,74 @@ export class AuthController {
         return;
       }
 
-      // Check if user exists
-      const user = await this.models.user.findByEmail(email);
-      if (!user) {
-        // For security, don't reveal if user doesn't exist
-        res.status(200).json({
-          success: true,
-          message: 'If the email exists, a magic link has been sent',
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        res.status(400).json({
+          error: 'Invalid email format',
           timestamp: new Date().toISOString()
         });
         return;
       }
 
-      // Generate magic link token
+      // Check if user exists, if not create one for magic link registration
+      let user = await this.models.user.findByEmail(email);
+      if (!user) {
+        // Create user automatically for magic link flow
+        const userData = {
+          id: crypto.randomUUID(),
+          email,
+          firstName: '',
+          lastName: '',
+          role: 'affiliate' as const,
+          isEmailVerified: true // Auto-verify for magic link users
+        };
+        user = await this.models.user.create(userData);
+        
+        console.log(`Created new user via magic link: ${email}`);
+      }
+
+      // Generate magic link token with longer expiry
       const magicToken = jwt.sign(
-        { userId: user.id, purpose: 'magic_link' },
+        { 
+          userId: user.id, 
+          purpose: 'magic_link',
+          email: user.email 
+        },
         process.env.JWT_SECRET as string,
-        { expiresIn: '15m' }
+        { expiresIn: '30m' } // 30 minutes for better UX
       );
 
-      const magicLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/magic?token=${magicToken}`;
+      // Send magic link email using our professional service
+      const emailResult = await sendMagicLinkEmail({
+        email,
+        token: magicToken,
+        locale,
+        returnUrl
+      });
 
-      // Send email (for MVP, we'll just log it)
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`🔗 Magic link for ${email}: ${magicLink}`);
-      } else {
-        // In production, send actual email
-        await resend.emails.send({
-          from: 'noreply@afflyt.io',
-          to: email,
-          subject: 'Your Afflyt.io Magic Link',
-          html: `
-            <h2>Login to Afflyt.io</h2>
-            <p>Click the link below to login:</p>
-            <a href="${magicLink}" style="display: inline-block; padding: 12px 24px; background: #0066cc; color: white; text-decoration: none; border-radius: 4px;">
-              Login to Afflyt.io
-            </a>
-            <p>This link expires in 15 minutes.</p>
-          `
+      if (!emailResult.success) {
+        console.error('Magic link email failed:', emailResult.error);
+        res.status(500).json({
+          error: 'Failed to send magic link email',
+          timestamp: new Date().toISOString()
         });
+        return;
+      }
+
+      // Log magic link for development
+      if (process.env.NODE_ENV === 'development') {
+        const baseUrl = process.env.MAGIC_LINK_BASE_URL || 'http://localhost:3000';
+        const magicLink = `${baseUrl}/${locale}/auth/verify?token=${magicToken}${returnUrl ? `&returnUrl=${encodeURIComponent(returnUrl)}` : ''}`;
+        console.log(`🔗 Magic link for ${email}: ${magicLink}`);
       }
 
       res.status(200).json({
         success: true,
         message: 'Magic link sent successfully',
+        data: {
+          messageId: emailResult.messageId
+        },
         timestamp: new Date().toISOString()
       });
     } catch (error) {
@@ -244,7 +270,11 @@ export class AuthController {
       }
 
       // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { userId: string; purpose: string };
+      const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { 
+        userId: string; 
+        purpose: string;
+        email: string;
+      };
       
       if (decoded.purpose !== 'magic_link') {
         res.status(400).json({
@@ -264,8 +294,20 @@ export class AuthController {
         return;
       }
 
-      // Update last login
-      await this.models.user.updateById(user.id, { lastLoginAt: new Date() });
+      // Verify email matches token
+      if (user.email !== decoded.email) {
+        res.status(400).json({
+          error: 'Token email mismatch',
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+
+      // Update user - mark as verified and update last login
+      await this.models.user.updateById(user.id, { 
+        isEmailVerified: true,
+        lastLoginAt: new Date() 
+      });
 
       // Generate access token
       const accessToken = jwt.sign(
@@ -280,17 +322,29 @@ export class AuthController {
           user: {
             id: user.id,
             email: user.email,
+            name: user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : null,
             firstName: user.firstName,
             lastName: user.lastName,
             role: user.role,
-            isEmailVerified: user.isEmailVerified
+            isEmailVerified: user.isEmailVerified,
+            balance: user.balance,
+            lastLoginAt: user.lastLoginAt,
+            createdAt: user.createdAt
           },
-          accessToken
+          token: accessToken
         },
         message: 'Magic link verified successfully',
         timestamp: new Date().toISOString()
       });
     } catch (error) {
+      if (error instanceof jwt.JsonWebTokenError) {
+        res.status(401).json({
+          error: 'Invalid or expired magic link',
+          timestamp: new Date().toISOString()
+        });
+        return;
+      }
+
       console.error('Magic link verification error:', error);
       res.status(401).json({
         error: 'Invalid or expired token',
@@ -307,17 +361,19 @@ export class AuthController {
       res.status(200).json({
         success: true,
         data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-            isEmailVerified: user.isEmailVerified,
-            balance: user.balance,
-            lastLoginAt: user.lastLoginAt,
-            createdAt: user.createdAt
-          }
+          id: user.id,
+          email: user.email,
+          name: user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : null,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          isEmailVerified: user.isEmailVerified,
+          balance: user.balance,
+          amazonAssociateTag: user.amazonAssociateTag,
+          websiteUrl: user.websiteUrl,
+          companyName: user.companyName,
+          lastLoginAt: user.lastLoginAt,
+          createdAt: user.createdAt
         },
         timestamp: new Date().toISOString()
       });
@@ -362,6 +418,26 @@ export class AuthController {
       });
     } catch (error) {
       console.error('Generate API key error:', error);
+      res.status(500).json({
+        error: 'Internal server error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  };
+
+  // Logout (optional endpoint for token invalidation)
+  logout = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      // For JWT, logout is typically handled client-side by removing the token
+      // We could implement a token blacklist here if needed
+      
+      res.status(200).json({
+        success: true,
+        message: 'Logout successful',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
       res.status(500).json({
         error: 'Internal server error',
         timestamp: new Date().toISOString()
