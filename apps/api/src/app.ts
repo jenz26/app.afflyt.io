@@ -10,6 +10,9 @@ dotenv.config();
 // Import configurations
 import database from './config/database';
 import redis from './config/redis';
+import { Models } from './models';
+import { createRoutes, createPublicRoutes } from './routes';
+import { createGeneralLimiter } from './middleware/rateLimiter';
 
 // Types for error handling
 interface ApiError extends Error {
@@ -19,12 +22,11 @@ interface ApiError extends Error {
 
 class App {
   public app: Application;
+  private models: Models | null = null;
 
   constructor() {
     this.app = express();
     this.initializeMiddlewares();
-    this.initializeRoutes();
-    this.initializeErrorHandling();
   }
 
   private initializeMiddlewares(): void {
@@ -50,37 +52,64 @@ class App {
     // Body parsing
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+    // General rate limiting
+    const generalLimiter = createGeneralLimiter();
+    this.app.use(generalLimiter.middleware());
   }
 
   private initializeRoutes(): void {
-  // Health check endpoint
-  this.app.get('/health', (req: Request, res: Response) => {
-    res.status(200).json({
-      status: 'OK',
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV,
-      version: process.env.API_VERSION || 'v1'
-    });
-  });
+    if (!this.models) {
+      throw new Error('Models not initialized. Call initializeDatabase() first.');
+    }
 
-  // API routes will be added here
-  this.app.use('/api/v1', (req: Request, res: Response) => {
-    res.status(200).json({
-      message: 'Afflyt.io API v1',
-      status: 'active',
-      timestamp: new Date().toISOString()
+    // Health check endpoint
+    this.app.get('/health', (req: Request, res: Response) => {
+      res.status(200).json({
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV,
+        version: process.env.API_VERSION || 'v1',
+        services: {
+          database: 'connected',
+          redis: 'connected'
+        }
+      });
     });
-  });
 
-  // 404 handler - usa all() invece di use()
-  this.app.all('*', (req: Request, res: Response) => {
-    res.status(404).json({
-      error: 'Not Found',
-      message: `Route ${req.originalUrl} not found`,
-      timestamp: new Date().toISOString()
+    // Public routes (redirects)
+    this.app.use('/', createPublicRoutes(this.models));
+
+    // API routes
+    this.app.use('/api/v1', createRoutes(this.models));
+
+    // API info endpoint
+    this.app.get('/api/v1', (req: Request, res: Response) => {
+      res.status(200).json({
+        message: 'Afflyt.io API v1',
+        status: 'active',
+        timestamp: new Date().toISOString(),
+        endpoints: {
+          auth: '/api/v1/auth',
+          links: '/api/v1/links',
+          redirects: '/r/{hash}'
+        },
+        documentation: '/api/v1/docs' // Future Swagger endpoint
+      });
     });
-  });
-}
+
+    // 404 handler
+    this.app.all('*', (req: Request, res: Response) => {
+      res.status(404).json({
+        error: 'Not Found',
+        message: `Route ${req.originalUrl} not found`,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    // Global error handler
+    this.initializeErrorHandling();
+  }
 
   private initializeErrorHandling(): void {
     // Global error handler
@@ -106,6 +135,14 @@ class App {
     try {
       await database.connect();
       await redis.connect();
+      
+      // Initialize models after database connection
+      this.models = new Models(database.getDb());
+      
+      // Initialize routes after models are ready
+      this.initializeRoutes();
+      
+      console.log('✅ Application initialized successfully');
     } catch (error) {
       console.error('Failed to initialize database connections:', error);
       throw error;
