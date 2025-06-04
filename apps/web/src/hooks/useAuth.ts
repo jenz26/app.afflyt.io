@@ -8,6 +8,7 @@
 
 import { useAuthContext, type User, type AuthContextValue } from '@/contexts/AuthContext';
 import { createAuthenticatedApiClient } from '@/lib/api';
+import { useCallback } from 'react';
 
 // Extended auth hook with additional utilities
 export interface UseAuthReturn extends AuthContextValue {
@@ -80,11 +81,11 @@ export function useAuth(): UseAuthReturn {
     }
   };
 
-  // Get authenticated API client
-  const getAuthenticatedApiClient = () => {
+  // Get authenticated API client - MEMOIZED
+  const getAuthenticatedApiClient = useCallback(() => {
     if (!token) return null;
     return createAuthenticatedApiClient(token);
-  };
+}, [token]);
 
   // Require authentication - throws error if not authenticated
   const requireAuth = () => {
