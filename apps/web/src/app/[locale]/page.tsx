@@ -73,29 +73,45 @@ const mockUser = {
   id: "user123"
 };
 
-// Animated Background Component
-const AnimatedBackground: React.FC = () => (
-  <div className="absolute inset-0 overflow-hidden">
-    <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-gradient-to-r from-pink-500/10 to-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
-    <div className="absolute bottom-1/4 right-1/3 w-80 h-80 bg-gradient-to-r from-blue-500/10 to-teal-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
-    
-    {/* Floating particles */}
-    <div className="absolute inset-0">
-      {Array.from({ length: 20 }).map((_, i) => (
-        <div
-          key={i}
-          className="absolute w-1 h-1 bg-gradient-to-r from-pink-400/30 to-blue-400/30 rounded-full animate-ping"
-          style={{
-            left: `${Math.random() * 100}%`,
-            top: `${Math.random() * 100}%`,
-            animationDelay: `${Math.random() * 3}s`,
-            animationDuration: `${2 + Math.random() * 3}s`
-          }}
-        />
-      ))}
+// Animated Background Component (same as homepage)
+const AnimatedBackground: React.FC = () => {
+  const [particles, setParticles] = useState<Array<{left: string, top: string, delay: string, duration: string}>>([]);
+
+  useEffect(() => {
+    // Genera le particelle solo lato client
+    const newParticles = Array.from({ length: 15 }).map(() => ({
+      left: `${Math.random() * 100}%`,
+      top: `${Math.random() * 100}%`,
+      delay: `${Math.random() * 3}s`,
+      duration: `${2 + Math.random() * 3}s`
+    }));
+    setParticles(newParticles);
+  }, []);
+
+  return (
+    <div className="absolute inset-0 overflow-hidden">
+      {/* Gradienti statici */}
+      <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-gradient-to-r from-pink-500/10 to-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
+      <div className="absolute bottom-1/4 right-1/3 w-80 h-80 bg-gradient-to-r from-blue-500/10 to-teal-500/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
+      
+      {/* Particelle dinamiche */}
+      <div className="absolute inset-0">
+        {particles.map((particle, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 bg-gradient-to-r from-pink-400/30 to-blue-400/30 rounded-full animate-ping"
+            style={{
+              left: particle.left,
+              top: particle.top,
+              animationDelay: particle.delay,
+              animationDuration: particle.duration
+            }}
+          />
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Hero Section Component
 const HeroSection: React.FC = () => {
@@ -429,7 +445,7 @@ export default function AppHomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Navbar */}
-      <Navbar user={mockUser} />
+      <Navbar />
       
       {/* Main Content */}
       <div className="relative overflow-hidden">

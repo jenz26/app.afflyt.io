@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { AuthProvider } from '@/contexts/AuthContext'
 
 export const metadata: Metadata = {
   title: 'Afflyt.io - Trasforma i tuoi link affiliati in una macchina di conversione',
@@ -14,7 +15,9 @@ export default function RootLayout({
   return (
     <html>
       <body className="min-h-screen antialiased">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   )

@@ -121,5 +121,32 @@
   "beta_benefit_free": "Accesso Beta Gratuito",
   "beta_benefit_lifetime": "Funzionalità Core a Vita",
   "beta_benefit_feedback": "Influenza Direzione Prodotto",
-  "beta_benefit_community": "Community Esclusiva"
+  "beta_benefit_community": "Community Esclusiva",
+
+  "auth": {
+    "welcomeToAfflyt": "Benvenuto su Afflyt",
+    "signInWithMagicLink": "Accedi al tuo account con magic link",
+    "emailAddress": "Indirizzo email",
+    "enterEmail": "Inserisci la tua email",
+    "sendMagicLink": "Invia magic link",
+    "sendingMagicLink": "Invio magic link...",
+    "emailRequired": "Inserisci il tuo indirizzo email",
+    "emailInvalid": "Inserisci un indirizzo email valido",
+    "magicLinkFailed": "Invio magic link fallito",
+    "checkingAuth": "Controllo autenticazione...",
+    "checkEmail": "Controlla la tua email",
+    "magicLinkSent": "Abbiamo inviato un magic link a",
+    "clickLink": "Clicca il link nella tua email per accedere al tuo account.",
+    "useDifferentEmail": "Usa email diversa",
+    "sending": "Invio...",
+    "resendMagicLink": "Invia di nuovo magic link",
+    "newToAfflyt": "Nuovo su Afflyt?",
+    "magicLinkInfo": "I magic link funzionano sia per accesso che registrazione. Nessuna password richiesta.",
+    "verifyingMagicLink": "Verifica del tuo magic link",
+    "pleaseWaitVerification": "Attendi mentre verifichiamo la tua autenticazione...",
+    "accountVerified": "Il tuo account è stato verificato con successo.",
+    "redirectingToDashboard": "Ti stiamo reindirizzando alla dashboard...",
+    "verificationFailed": "Verifica fallita",
+    "backToSignIn": "Torna al login"
+  }
 }

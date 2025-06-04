@@ -121,5 +121,32 @@
   "beta_benefit_free": "Free Beta Access",
   "beta_benefit_lifetime": "Lifetime Core Features",
   "beta_benefit_feedback": "Shape Product Direction",
-  "beta_benefit_community": "Exclusive Community"
+  "beta_benefit_community": "Exclusive Community",
+
+  "auth": {
+    "welcomeToAfflyt": "Welcome to Afflyt",
+    "signInWithMagicLink": "Sign in to your account with magic link",
+    "emailAddress": "Email address",
+    "enterEmail": "Enter your email",
+    "sendMagicLink": "Send magic link",
+    "sendingMagicLink": "Sending magic link...",
+    "emailRequired": "Please enter your email address",
+    "emailInvalid": "Please enter a valid email address",
+    "magicLinkFailed": "Failed to send magic link",
+    "checkingAuth": "Checking authentication...",
+    "checkEmail": "Check your email",
+    "magicLinkSent": "We've sent a magic link to",
+    "clickLink": "Click the link in your email to sign in to your account.",
+    "useDifferentEmail": "Use different email",
+    "sending": "Sending...",
+    "resendMagicLink": "Resend magic link",
+    "newToAfflyt": "New to Afflyt?",
+    "magicLinkInfo": "Magic links work for both sign in and registration. No passwords required.",
+    "verifyingMagicLink": "Verifying your magic link",
+    "pleaseWaitVerification": "Please wait while we verify your authentication...",
+    "accountVerified": "Your account has been verified successfully.",
+    "redirectingToDashboard": "Redirecting you to your dashboard...",
+    "verificationFailed": "Verification failed",
+    "backToSignIn": "Back to sign in"
+  }
 }
