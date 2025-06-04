@@ -11,7 +11,6 @@ export interface BaseDocument {
 export interface User extends BaseDocument {
   id: string;
   email: string;
-  name?: string;
   passwordHash?: string;
   firstName?: string;
   lastName?: string;
@@ -20,10 +19,6 @@ export interface User extends BaseDocument {
   lastLoginAt?: Date;
   balance: number;
   apiKeys: ApiKey[];
-  // Nuovi campi per v1.3.0
-  amazonAssociateTag?: string;
-  websiteUrl?: string;
-  companyName?: string;
 }
 
 export interface ApiKey {
@@ -47,9 +42,6 @@ export interface AffiliateLink extends BaseDocument {
   uniqueClickCount: number;
   conversionCount: number;
   totalRevenue: number;
-  // Nuovi campi per v1.3.0
-  source?: string;
-  expiresAt?: Date;
 }
 
 // Click types
@@ -64,40 +56,6 @@ export interface Click extends BaseDocument {
   browser?: string;
   isUnique: boolean;
   sessionId?: string;
-  // Nuovo campo per v1.3.0
-  trackingId?: string;
-}
-
-// Nuovi tipi per v1.3.0
-export interface UserSetting extends BaseDocument {
-  userId: string;
-  dashboardLayout: DashboardLayoutItem[];
-}
-
-export interface DashboardLayoutItem {
-  i: string; // widget id
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  minW?: number;
-  minH?: number;
-  maxW?: number;
-  maxH?: number;
-  static?: boolean;
-}
-
-export interface Conversion extends BaseDocument {
-  linkId: ObjectId;
-  userId: string;
-  trackingId: string;
-  payoutAmount: number;
-  advertiserRevenue?: number;
-  status: 'pending' | 'approved' | 'rejected';
-  conversionTimestamp: Date;
-  ipAddress?: string;
-  orderId?: string;
-  notes?: string;
 }
 
 // API Response types
@@ -122,35 +80,4 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 export interface AuthenticatedRequest extends Request {
   user?: User;
   apiKey?: ApiKey;
-}
-
-// Analytics types per dashboard
-export interface AnalyticsSummary {
-  totalLinks: number;
-  totalClicks: number;
-  uniqueClicks: number;
-  totalConversions: number;
-  pendingConversions: number;
-  rejectedConversions: number;
-  totalRevenue: number;
-  conversionRate: number;
-  earningsPerClick: number;
-  dataPeriod: {
-    startDate: Date;
-    endDate: Date;
-  };
-}
-
-export interface TrendDataPoint {
-  date: string;
-  clicks?: number;
-  uniqueClicks?: number;
-  revenue?: number;
-  conversions?: number;
-}
-
-export interface DistributionDataPoint {
-  label: string;
-  value: number;
-  percentage?: number;
 }

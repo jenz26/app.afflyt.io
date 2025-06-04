@@ -16,6 +16,7 @@ export class ClickModel {
       await this.collection.createIndex({ createdAt: -1 });
       await this.collection.createIndex({ ipAddress: 1, linkHash: 1 });
       await this.collection.createIndex({ sessionId: 1 });
+      await this.collection.createIndex({ trackingId: 1 }, { unique: true }); // Nuovo index
       console.log('✅ Click indexes created');
     } catch (error) {
       console.error('❌ Error creating click indexes:', error);
@@ -41,6 +42,10 @@ export class ClickModel {
 
     const result = await this.collection.insertOne(click);
     return { ...click, _id: result.insertedId };
+  }
+
+  async findByTrackingId(trackingId: string): Promise<Click | null> {
+    return await this.collection.findOne({ trackingId });
   }
 
   async getClicksByLink(linkHash: string, limit = 100, offset = 0): Promise<Click[]> {

@@ -11,7 +11,7 @@ dotenv.config();
 import database from './config/database';
 import redis from './config/redis';
 import { Models } from './models';
-import { createRoutes, createPublicRoutes } from './routes';
+import { createRoutes, createAPIRoutes, createPublicRoutes } from './routes';
 import { createGeneralLimiter } from './middleware/rateLimiter';
 
 // Types for error handling
@@ -77,24 +77,52 @@ class App {
       });
     });
 
-    // Public routes (redirects)
+    // Public routes (redirects and tracking)
     this.app.use('/', createPublicRoutes(this.models));
 
-    // API routes
+    // Legacy API routes (v1.2.0 - manteniamo per compatibilità)
     this.app.use('/api/v1', createRoutes(this.models));
 
-    // API info endpoint
+    // New API routes (v1.3.0 - nuova struttura)
+    this.app.use('/api', createAPIRoutes(this.models));
+
+    // API info endpoint (updated)
     this.app.get('/api/v1', (req: Request, res: Response) => {
       res.status(200).json({
-        message: 'Afflyt.io API v1',
+        message: 'Afflyt.io API v1.3.0',
         status: 'active',
         timestamp: new Date().toISOString(),
         endpoints: {
+          // Legacy endpoints (v1.2.0)
           auth: '/api/v1/auth',
           links: '/api/v1/links',
-          redirects: '/r/{hash}'
+          
+          // New endpoints (v1.3.0)
+          user: '/api/user',
+          userProfile: '/api/user/me',
+          apiKeys: '/api/user/keys',
+          dashboardLayout: '/api/user/dashboard-layout',
+          analytics: '/api/user/analytics',
+          conversions: '/api/user/conversions',
+          
+          // Public endpoints
+          redirects: '/r/{hash}',
+          tracking: '/track/conversion'
         },
-        documentation: '/api/v1/docs' // Future Swagger endpoint
+        documentation: '/docs', // Future Swagger endpoint
+        version: {
+          current: 'v1.3.0',
+          description: 'Backend API Completo MVP (Dashboard & Analytics)'
+        }
+      });
+    });
+
+    // Future: Swagger documentation endpoint
+    this.app.get('/docs', (req: Request, res: Response) => {
+      res.status(200).json({
+        message: 'API Documentation coming soon',
+        swagger: 'Not implemented yet',
+        endpoints: '/api/v1' // Redirect to API info for now
       });
     });
 
@@ -103,7 +131,8 @@ class App {
       res.status(404).json({
         error: 'Not Found',
         message: `Route ${req.originalUrl} not found`,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        suggestion: 'Check /api/v1 for available endpoints'
       });
     });
 
@@ -143,6 +172,8 @@ class App {
       this.initializeRoutes();
       
       console.log('✅ Application initialized successfully');
+      console.log('📊 Models loaded: User, AffiliateLink, Click, UserSetting, Conversion');
+      console.log('🛣️  Routes configured: Legacy API (v1.2.0) + New API (v1.3.0)');
     } catch (error) {
       console.error('Failed to initialize database connections:', error);
       throw error;

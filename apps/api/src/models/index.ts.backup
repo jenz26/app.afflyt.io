@@ -2,27 +2,19 @@ import { Db } from 'mongodb';
 import { UserModel } from './User';
 import { AffiliateLinkModel } from './AffiliateLink';
 import { ClickModel } from './Click';
-import { UserSettingModel } from './UserSetting';
-import { ConversionModel } from './Conversion';
 
 export class Models {
   public user: UserModel;
   public affiliateLink: AffiliateLinkModel;
   public click: ClickModel;
-  public userSetting: UserSettingModel;
-  public conversion: ConversionModel;
 
   constructor(db: Db) {
     this.user = new UserModel(db);
     this.affiliateLink = new AffiliateLinkModel(db);
     this.click = new ClickModel(db);
-    this.userSetting = new UserSettingModel(db);
-    this.conversion = new ConversionModel(db);
   }
 }
 
 export * from './User';
 export * from './AffiliateLink';
 export * from './Click';
-export * from './UserSetting';
-export * from './Conversion';
