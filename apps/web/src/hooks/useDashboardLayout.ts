@@ -157,14 +157,24 @@ export function useDashboardLayout() {
     setError(null);
 
     try {
-      await apiClient.put('/api/user/dashboard-layout', layoutToSave);
+      // 🔧 FIX: Invia solo l'oggetto nel formato che il backend si aspetta
+      const backendPayload = {
+        widgets: layoutToSave.widgets,
+        lastModified: layoutToSave.lastModified
+      };
+      
+      console.log('🔍 Sending to API (fixed):', backendPayload);
+      
+      await apiClient.put('/api/user/dashboard-layout', backendPayload);
       lastSavedLayoutRef.current = currentLayoutString;
+      
+      console.log('✅ Layout saved successfully');
     } catch (err) {
       const errorMessage = err instanceof AfflytApiError 
         ? err.message 
         : 'Failed to save dashboard layout';
       
-      console.error('Failed to save layout:', errorMessage);
+      console.error('❌ Failed to save layout:', errorMessage);
       setError(errorMessage);
     } finally {
       setIsSaving(false);

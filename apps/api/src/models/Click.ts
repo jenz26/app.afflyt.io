@@ -145,6 +145,76 @@ export class ClickModel {
     }));
   }
 
+  async getHourlyHeatmap(userId: string, startDate: Date): Promise<Array<{ hour: number; day: number; clicks: number; uniqueClicks: number }>> {
+    const pipeline = [
+      {
+        $match: {
+          userId,
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $addFields: {
+          hour: { $hour: { $dateToString: { format: '%Y-%m-%dT%H:%M:%S.%LZ', date: '$createdAt' } } },
+          // MongoDB dayOfWeek returns 1=Sunday, 7=Saturday, we want 0=Monday, 6=Sunday
+          dayOfWeek: {
+            $subtract: [
+              { $dayOfWeek: '$createdAt' }, 
+              2 // Convert to Monday=0, Sunday=6
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          // Handle Sunday (was -1, should be 6)
+          day: {
+            $cond: {
+              if: { $eq: ['$dayOfWeek', -1] },
+              then: 6,
+              else: '$dayOfWeek'
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            hour: '$hour',
+            day: '$day'
+          },
+          clicks: { $sum: 1 },
+          uniqueIPs: { $addToSet: '$ipAddress' }
+        }
+      },
+      {
+        $addFields: {
+          uniqueClicks: { $size: '$uniqueIPs' }
+        }
+      },
+      {
+        $project: {
+          hour: '$_id.hour',
+          day: '$_id.day',
+          clicks: 1,
+          uniqueClicks: 1,
+          _id: 0
+        }
+      },
+      {
+        $sort: { day: 1, hour: 1 }
+      }
+    ];
+
+    const result = await this.collection.aggregate(pipeline).toArray();
+    return result.map((item: any) => ({
+      hour: item.hour || 0,
+      day: item.day || 0,
+      clicks: item.clicks || 0,
+      uniqueClicks: item.uniqueClicks || 0
+    }));
+  }
+
   async getDeviceDistribution(userId: string): Promise<Array<{ device: string; clicks: number }>> {
     const pipeline = [
       { $match: { userId, device: { $exists: true, $ne: null } } },

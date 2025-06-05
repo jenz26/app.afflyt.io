@@ -66,7 +66,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
           
           {/* Page Content - PIÙ SPAZIO PER I WIDGET */}
-          <main className="p-4 lg:p-6 max-w-none">
+          <main className="max-w-none">
             {children}
           </main>
         </div>

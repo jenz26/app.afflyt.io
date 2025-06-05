@@ -84,7 +84,7 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
         fixed left-0 top-16 z-30 h-[calc(100vh-4rem)] w-64 bg-slate-800/90 backdrop-blur-xl border-r border-white/10
         transform transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:static lg:z-auto
+        lg:translate-x-0
       `}>
         {/* Mobile Close Button */}
         <div className="lg:hidden flex items-center justify-end p-4 border-b border-white/10">

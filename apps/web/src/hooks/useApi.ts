@@ -54,12 +54,14 @@ export interface RevenueTrendData {
 }
 
 export interface ApiKeyData {
-  keyId: string;
+  id: string;           // Backend usa 'id' (non keyId)
   name: string;
   isActive: boolean;
   createdAt: string;
   lastUsedAt?: string;
-  usageCount: number;
+  keyPreview: string;   // Backend fornisce 'keyPreview' 
+  usageCount?: number;  // Opzionale per compatibilità
+  key?: string;         // Key completa solo alla creazione
 }
 
 // Generic hook for API calls with auth
@@ -373,41 +375,52 @@ export function useApiKeys(autoFetch = true) {
   const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
   const fetchApiKeys = useCallback(async () => {
-    if (!isLoggedIn) return;
+  if (!isLoggedIn) return;
 
-    const apiClient = getAuthenticatedApiClient();
-    if (!apiClient) return;
+  const apiClient = getAuthenticatedApiClient();
+  if (!apiClient) return;
 
-    setIsLoading(true);
-    setError(null);
+  setIsLoading(true);
+  setError(null);
 
-    try {
-      const result = await apiClient.get<ApiKeyData[]>('/api/user/keys');
-      setData(result || []);
-    } catch (err) {
-      const errorMessage = err instanceof AfflytApiError 
-        ? err.message 
-        : 'Failed to fetch API keys';
-      setError(errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isLoggedIn, getAuthenticatedApiClient]);
+  try {
+    const result = await apiClient.get('/api/user/keys');
+    
+    // 🔧 FIX: Il backend ritorna { success: true, data: { apiKeys: [...] } }
+    const apiKeysData = result?.data?.apiKeys || result?.apiKeys || result || [];
+    setData(Array.isArray(apiKeysData) ? apiKeysData : []);
+  } catch (err) {
+    const errorMessage = err instanceof AfflytApiError 
+      ? err.message 
+      : 'Failed to fetch API keys';
+    setError(errorMessage);
+  } finally {
+    setIsLoading(false);
+  }
+}, [isLoggedIn, getAuthenticatedApiClient]);
 
   const createApiKey = useCallback(async (name: string) => {
-    if (!isLoggedIn) throw new Error('Authentication required');
+  if (!isLoggedIn) throw new Error('Authentication required');
 
-    const apiClient = getAuthenticatedApiClient();
-    if (!apiClient) throw new Error('Authentication client not available');
+  const apiClient = getAuthenticatedApiClient();
+  if (!apiClient) throw new Error('Authentication client not available');
 
-    try {
-      const result = await apiClient.post('/api/user/keys', { name });
-      fetchApiKeys(); // Refresh the list
-      return result;
-    } catch (err) {
-      throw err;
-    }
-  }, [isLoggedIn, getAuthenticatedApiClient, fetchApiKeys]);
+  try {
+    const result = await apiClient.post('/api/user/keys', { name });
+    
+    // 🔧 FIX: Il backend ritorna { apiKey: { key: "...", ... } }
+    // Ma noi ci aspettiamo { key: "...", ... } direttamente
+    const apiKeyData = result?.apiKey || result;
+    
+    console.log('🔑 API Key Data:', apiKeyData);
+    
+    fetchApiKeys(); // Refresh the list
+    return apiKeyData; // ← Ritorna apiKeyData invece di result
+  } catch (err) {
+    console.error('❌ Create API Key Error:', err);
+    throw err;
+  }
+}, [isLoggedIn, getAuthenticatedApiClient, fetchApiKeys]);
 
   const updateApiKey = useCallback(async (keyId: string, updates: { name?: string; isActive?: boolean }) => {
     if (!isLoggedIn) throw new Error('Authentication required');

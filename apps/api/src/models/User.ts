@@ -36,6 +36,18 @@ export class UserModel {
     return { ...user, _id: result.insertedId };
   }
 
+  async deleteApiKey(userId: string, keyId: string): Promise<boolean> {
+  const result = await this.collection.updateOne(
+    { id: userId },
+    { 
+      $pull: { apiKeys: { id: keyId } },
+      $set: { updatedAt: new Date() }
+    }
+  );
+
+  return result.modifiedCount > 0;
+}
+
   async findById(id: string): Promise<User | null> {
     return await this.collection.findOne({ id });
   }

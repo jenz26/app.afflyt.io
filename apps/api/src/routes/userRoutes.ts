@@ -40,6 +40,8 @@ export const createUserRoutes = (models: Models): Router => {
   router.get('/analytics/distribution/referer', analyticsController.getRefererDistribution);
   router.get('/analytics/distribution/subid', analyticsController.getSubIdDistribution);
   router.get('/analytics/top-performing-links', analyticsController.getTopPerformingLinks);
+  router.get('/analytics/hourly-heatmap', analyticsController.getHourlyHeatmap);
+
 
   // User Links Management (updated endpoints)
   router.get('/links', async (req, res) => {

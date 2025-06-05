@@ -250,6 +250,94 @@ export class AnalyticsController {
     }
   };
 
+  // GET /api/user/analytics/hourly-heatmap
+  getHourlyHeatmap = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const user = req.user!;
+      const { period = '7d', startDate, endDate } = req.query;
+
+      // Calculate date range
+      let dateFilter: Date;
+      if (startDate && endDate) {
+        dateFilter = new Date(startDate as string);
+      } else {
+        const days = this.parsePeriod(period as string);
+        dateFilter = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      }
+
+      // Get hourly heatmap data from click model
+      const heatmapData = await this.models.click.getHourlyHeatmap(user.id, dateFilter);
+
+      // Create complete 24x7 grid with zeros for missing slots
+      const completeData: Array<{
+        hour: number;
+        day: number;
+        clicks: number;
+        uniqueClicks: number;
+        intensity: number;
+      }> = [];
+
+      // Initialize grid with zeros
+      for (let day = 0; day < 7; day++) {
+        for (let hour = 0; hour < 24; hour++) {
+          const existingData = heatmapData.find((d: any) => d.day === day && d.hour === hour);
+          completeData.push({
+            hour,
+            day,
+            clicks: existingData?.clicks || 0,
+            uniqueClicks: existingData?.uniqueClicks || 0,
+            intensity: 0 // Will be calculated below
+          });
+        }
+      }
+
+      // Calculate statistics
+      const totalClicks = completeData.reduce((sum, item) => sum + item.clicks, 0);
+      let maxClicks = 0;
+      let peakHour = 0;
+      let peakDay = 0;
+
+      completeData.forEach(item => {
+        if (item.clicks > maxClicks) {
+          maxClicks = item.clicks;
+          peakHour = item.hour;
+          peakDay = item.day;
+        }
+      });
+
+      // Calculate intensity for each cell (0-1 scale)
+      completeData.forEach(item => {
+        item.intensity = maxClicks > 0 ? item.clicks / maxClicks : 0;
+      });
+
+      const response = {
+        data: completeData,
+        totalClicks,
+        maxClicks,
+        peakHour,
+        peakDay,
+        period: period as string,
+        dateRange: {
+          startDate: dateFilter.toISOString(),
+          endDate: new Date().toISOString()
+        }
+      };
+
+      res.status(200).json({
+        success: true,
+        data: response,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('Error fetching hourly heatmap:', error);
+      res.status(500).json({
+        error: 'Internal server error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  };
+
   // GET /api/user/analytics/top-performing-links
   getTopPerformingLinks = async (req: AuthRequest, res: Response): Promise<void> => {
     try {

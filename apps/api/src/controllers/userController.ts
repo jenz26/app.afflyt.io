@@ -286,55 +286,53 @@ export class UserController {
   };
 
   // DELETE /api/user/keys/:keyId
-  deleteApiKey = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-      const user = req.user!;
-      const { keyId } = req.params;
+deleteApiKey = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const user = req.user!;
+    const { keyId } = req.params;
 
-      if (!keyId) {
-        res.status(400).json({
-          error: 'Key ID is required',
-          timestamp: new Date().toISOString()
-        });
-        return;
-      }
-
-      // Verifica che l'API key esista
-      const apiKeyExists = user.apiKeys.some(key => key.id === keyId);
-      if (!apiKeyExists) {
-        res.status(404).json({
-          error: 'API key not found',
-          timestamp: new Date().toISOString()
-        });
-        return;
-      }
-
-      // Rimuovi l'API key
-      const updatedUser = await this.models.user.updateById(user.id, {
-        $pull: { apiKeys: { id: keyId } }
-      } as any);
-
-      if (!updatedUser) {
-        res.status(500).json({
-          error: 'Failed to delete API key',
-          timestamp: new Date().toISOString()
-        });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        message: 'API key deleted successfully',
+    if (!keyId) {
+      res.status(400).json({
+        error: 'Key ID is required',
         timestamp: new Date().toISOString()
       });
-    } catch (error) {
-      console.error('Error deleting API key:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      return;
     }
-  };
+
+    // Verifica che l'API key esista
+    const apiKeyExists = user.apiKeys.some(key => key.id === keyId);
+    if (!apiKeyExists) {
+      res.status(404).json({
+        error: 'API key not found',
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+
+    // 🔧 FIX: Usa il metodo deleteApiKey del model
+    const deleted = await this.models.user.deleteApiKey(user.id, keyId);
+
+    if (!deleted) {
+      res.status(500).json({
+        error: 'Failed to delete API key',
+        timestamp: new Date().toISOString()
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'API key deleted successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error deleting API key:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      timestamp: new Date().toISOString()
+    });
+  }
+};
 
   // Utility function per validare URL
   private isValidUrl(url: string): boolean {
