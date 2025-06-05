@@ -4,7 +4,7 @@
  * API Hooks for Afflyt.io
  * Provides React hooks for data fetching with authentication integration
  * 
- * @version 1.5.0
+ * @version 1.8.0 - Extended for Multi-Tags and Multi-Channels Support
  * @phase Frontend-Backend Integration
  */
 
@@ -63,6 +63,93 @@ export interface ApiKeyData {
   usageCount?: number;  // Opzionale per compatibilità
   key?: string;         // Key completa solo alla creazione
 }
+
+// ✨ NEW v1.8.x: Types for Multi-Tags and Multi-Channels
+export interface AmazonTag {
+  id: string;
+  tag: string;
+  marketplace: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: string;
+  lastUsedAt?: string;
+  linksCreated: number;
+  totalClicks: number;
+  totalRevenue: number;
+}
+
+export interface Channel {
+  id: string;
+  name: string;
+  type: 'website' | 'blog' | 'youtube' | 'instagram' | 'telegram' | 'discord' | 'other';
+  url?: string;
+  description?: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: string;
+  lastUsedAt?: string;
+  linksCreated: number;
+  totalClicks: number;
+  totalRevenue: number;
+  defaultAmazonTagId?: string;
+}
+
+export interface CreateAmazonTagData {
+  tag: string;
+  marketplace: string;
+  name: string;
+  isDefault?: boolean;
+}
+
+export interface UpdateAmazonTagData {
+  tag?: string;
+  name?: string;
+  isDefault?: boolean;
+  isActive?: boolean;
+}
+
+export interface CreateChannelData {
+  name: string;
+  type: Channel['type'];
+  url?: string;
+  description?: string;
+  isDefault?: boolean;
+  defaultAmazonTagId?: string;
+}
+
+export interface UpdateChannelData {
+  name?: string;
+  type?: Channel['type'];
+  url?: string;
+  description?: string;
+  isDefault?: boolean;
+  isActive?: boolean;
+  defaultAmazonTagId?: string;
+}
+
+// Constants for validation
+export const AMAZON_MARKETPLACES = [
+  { code: 'com', name: 'Amazon.com (US)', flag: '🇺🇸' },
+  { code: 'it', name: 'Amazon.it (Italia)', flag: '🇮🇹' },
+  { code: 'de', name: 'Amazon.de (Germania)', flag: '🇩🇪' },
+  { code: 'fr', name: 'Amazon.fr (Francia)', flag: '🇫🇷' },
+  { code: 'es', name: 'Amazon.es (Spagna)', flag: '🇪🇸' },
+  { code: 'co.uk', name: 'Amazon.co.uk (Regno Unito)', flag: '🇬🇧' },
+  { code: 'ca', name: 'Amazon.ca (Canada)', flag: '🇨🇦' },
+  { code: 'com.au', name: 'Amazon.com.au (Australia)', flag: '🇦🇺' },
+  { code: 'co.jp', name: 'Amazon.co.jp (Giappone)', flag: '🇯🇵' },
+];
+
+export const CHANNEL_TYPES = [
+  { code: 'website', name: 'Sito Web', icon: '🌐' },
+  { code: 'blog', name: 'Blog', icon: '📝' },
+  { code: 'youtube', name: 'YouTube', icon: '📺' },
+  { code: 'instagram', name: 'Instagram', icon: '📷' },
+  { code: 'telegram', name: 'Telegram', icon: '📱' },
+  { code: 'discord', name: 'Discord', icon: '🎮' },
+  { code: 'other', name: 'Altro', icon: '📦' },
+];
 
 // Generic hook for API calls with auth
 export function useApiCall<T = any>() {
@@ -465,5 +552,332 @@ export function useApiKeys(autoFetch = true) {
     createApiKey,
     updateApiKey,
     deleteApiKey,
+  };
+}
+
+// Types for user profile (UPDATED for v1.8.x)
+export interface UserProfile {
+  id: string;
+  email: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  role: 'affiliate' | 'advertiser' | 'admin';
+  isEmailVerified: boolean;
+  // ⚠️ DEPRECATED - kept for backward compatibility
+  amazonAssociateTag?: string;
+  websiteUrl?: string;
+  companyName?: string;
+  // ✨ NEW v1.8.x: Multi-entity support
+  amazonTags?: AmazonTag[];
+  channels?: Channel[];
+  defaultAmazonTagId?: string;
+  defaultChannelId?: string;
+  balance: number;
+  createdAt: string;
+  lastLoginAt?: string;
+}
+
+export interface UserProfileUpdateData {
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  amazonAssociateTag?: string;
+  websiteUrl?: string;
+  companyName?: string;
+  // ✨ NEW v1.8.x
+  defaultAmazonTagId?: string;
+  defaultChannelId?: string;
+}
+
+// Hook for user profile management (UPDATED for v1.8.x)
+export function useUserProfile(autoFetch = true) {
+  const [data, setData] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { getAuthenticatedApiClient, isLoggedIn, updateProfile } = useAuth();
+
+  const fetchProfile = useCallback(async () => {
+    if (!isLoggedIn) return;
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const result = await apiClient.get<{ user: UserProfile }>('/api/user/me');
+      const userData = result?.user || result;
+      setData(userData);
+    } catch (err) {
+      const errorMessage = err instanceof AfflytApiError 
+        ? err.message 
+        : 'Failed to fetch user profile';
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient]);
+
+  const updateUserProfile = useCallback(async (updates: UserProfileUpdateData) => {
+    if (!isLoggedIn) throw new Error('Authentication required');
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) throw new Error('Authentication client not available');
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const result = await apiClient.put<{ user: UserProfile }>('/api/user/me', updates);
+      const userData = result?.user || result;
+      setData(userData);
+      
+      // Update auth context if the user object is updated
+      await updateProfile(userData);
+      
+      return userData;
+    } catch (err) {
+      const errorMessage = err instanceof AfflytApiError 
+        ? err.message 
+        : 'Failed to update profile';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient, updateProfile]);
+
+  const validateAmazonTag = useCallback((tag: string): string | null => {
+    if (!tag) return null;
+    
+    // Amazon associate tag validation
+    if (tag.length < 3 || tag.length > 20) {
+      return 'Tag Amazon deve essere tra 3 e 20 caratteri';
+    }
+    
+    if (!/^[a-zA-Z0-9_-]+$/.test(tag)) {
+      return 'Tag Amazon può contenere solo lettere, numeri, trattini e underscore';
+    }
+    
+    if (!tag.includes('-')) {
+      return 'Tag Amazon deve contenere almeno un trattino (es. "mysite-21")';
+    }
+    
+    return null;
+  }, []);
+
+  const validateWebsiteUrl = useCallback((url: string): string | null => {
+    if (!url) return null;
+    
+    try {
+      const urlObj = new URL(url);
+      if (!['http:', 'https:'].includes(urlObj.protocol)) {
+        return 'URL deve iniziare con http:// o https://';
+      }
+      return null;
+    } catch {
+      return 'URL non valido';
+    }
+  }, []);
+
+  useEffect(() => {
+    if (autoFetch && isLoggedIn) {
+      fetchProfile();
+    }
+  }, [autoFetch, isLoggedIn, fetchProfile]);
+
+  return {
+    data,
+    isLoading,
+    error,
+    refetch: fetchProfile,
+    updateProfile: updateUserProfile,
+    // Validation helpers
+    validateAmazonTag,
+    validateWebsiteUrl,
+  };
+}
+
+// ✨ NEW v1.8.x: Hook for managing Amazon Tags
+export function useAmazonTags(autoFetch = true) {
+  const [data, setData] = useState<AmazonTag[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
+
+  const fetchAmazonTags = useCallback(async () => {
+    if (!isLoggedIn) return;
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const result = await apiClient.get<{ amazonTags: AmazonTag[] }>('/api/user/amazon-tags');
+      const tagsData = result?.amazonTags || result || [];
+      setData(Array.isArray(tagsData) ? tagsData : []);
+    } catch (err) {
+      const errorMessage = err instanceof AfflytApiError 
+        ? err.message 
+        : 'Failed to fetch Amazon tags';
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient]);
+
+  const createAmazonTag = useCallback(async (tagData: CreateAmazonTagData) => {
+    if (!isLoggedIn) throw new Error('Authentication required');
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) throw new Error('Authentication client not available');
+
+    try {
+      const result = await apiClient.post<{ amazonTag: AmazonTag }>('/api/user/amazon-tags', tagData);
+      fetchAmazonTags(); // Refresh the list
+      return result?.amazonTag || result;
+    } catch (err) {
+      throw err;
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient, fetchAmazonTags]);
+
+  const updateAmazonTag = useCallback(async (tagId: string, updates: UpdateAmazonTagData) => {
+    if (!isLoggedIn) throw new Error('Authentication required');
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) throw new Error('Authentication client not available');
+
+    try {
+      const result = await apiClient.patch<{ amazonTag: AmazonTag }>(`/api/user/amazon-tags/${tagId}`, updates);
+      fetchAmazonTags(); // Refresh the list
+      return result?.amazonTag || result;
+    } catch (err) {
+      throw err;
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient, fetchAmazonTags]);
+
+  const deleteAmazonTag = useCallback(async (tagId: string) => {
+    if (!isLoggedIn) throw new Error('Authentication required');
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) throw new Error('Authentication client not available');
+
+    try {
+      await apiClient.delete(`/api/user/amazon-tags/${tagId}`);
+      fetchAmazonTags(); // Refresh the list
+    } catch (err) {
+      throw err;
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient, fetchAmazonTags]);
+
+  useEffect(() => {
+    if (autoFetch && isLoggedIn) {
+      fetchAmazonTags();
+    }
+  }, [autoFetch, isLoggedIn, fetchAmazonTags]);
+
+  return {
+    data,
+    isLoading,
+    error,
+    refetch: fetchAmazonTags,
+    createAmazonTag,
+    updateAmazonTag,
+    deleteAmazonTag,
+  };
+}
+
+// ✨ NEW v1.8.x: Hook for managing Channels
+export function useChannels(autoFetch = true) {
+  const [data, setData] = useState<Channel[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
+
+  const fetchChannels = useCallback(async () => {
+    if (!isLoggedIn) return;
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const result = await apiClient.get<{ channels: Channel[] }>('/api/user/channels');
+      const channelsData = result?.channels || result || [];
+      setData(Array.isArray(channelsData) ? channelsData : []);
+    } catch (err) {
+      const errorMessage = err instanceof AfflytApiError 
+        ? err.message 
+        : 'Failed to fetch channels';
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient]);
+
+  const createChannel = useCallback(async (channelData: CreateChannelData) => {
+    if (!isLoggedIn) throw new Error('Authentication required');
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) throw new Error('Authentication client not available');
+
+    try {
+      const result = await apiClient.post<{ channel: Channel }>('/api/user/channels', channelData);
+      fetchChannels(); // Refresh the list
+      return result?.channel || result;
+    } catch (err) {
+      throw err;
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient, fetchChannels]);
+
+  const updateChannel = useCallback(async (channelId: string, updates: UpdateChannelData) => {
+    if (!isLoggedIn) throw new Error('Authentication required');
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) throw new Error('Authentication client not available');
+
+    try {
+      const result = await apiClient.patch<{ channel: Channel }>(`/api/user/channels/${channelId}`, updates);
+      fetchChannels(); // Refresh the list
+      return result?.channel || result;
+    } catch (err) {
+      throw err;
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient, fetchChannels]);
+
+  const deleteChannel = useCallback(async (channelId: string) => {
+    if (!isLoggedIn) throw new Error('Authentication required');
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) throw new Error('Authentication client not available');
+
+    try {
+      await apiClient.delete(`/api/user/channels/${channelId}`);
+      fetchChannels(); // Refresh the list
+    } catch (err) {
+      throw err;
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient, fetchChannels]);
+
+  useEffect(() => {
+    if (autoFetch && isLoggedIn) {
+      fetchChannels();
+    }
+  }, [autoFetch, isLoggedIn, fetchChannels]);
+
+  return {
+    data,
+    isLoading,
+    error,
+    refetch: fetchChannels,
+    createChannel,
+    updateChannel,
+    deleteChannel,
   };
 }

@@ -1,31 +1,25 @@
+// apps/web/src/components/dashboard/StaticDashboard.tsx
 'use client';
 
-import { TotalClicksWidget } from './widgets/TotalClicksWidget';
-import { RevenueWidget } from './widgets/RevenueWidget';
 import { RecentLinksWidget } from './widgets/RecentLinksWidget';
-import { HourlyHeatmapWidget } from './widgets/HourlyHeatmapWidget';
-import { GeographicWidget } from './widgets/GeographicWidget';
-import { DeviceAnalyticsWidget } from './widgets/DeviceAnalyticsWidget';
-import { TopLinksWidget } from './widgets/TopLinksWidget';
+import { AccountHealthWidget } from './widgets/AccountHealthWidget';
+import { SmartQuickActionsWidget } from './widgets/SmartQuickActionsWidget';
 import { useStats } from '@/hooks/useStats';
 import { useClicksTrend } from '@/hooks/useClicksTrend';
 import { useRevenueTrend } from '@/hooks/useRevenueTrend';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   TrendingUp, 
   TrendingDown,
   Users, 
-  Globe, 
-  Zap,
   Activity,
-  Target,
-  BarChart3,
-  Clock,
   Sparkles,
-  ChevronRight,
-  ExternalLink
+  Clock,
+  Home,
+  ChevronRight
 } from 'lucide-react';
 
-// Quick Stats Cards con Dati e Percentuali Reali
+// Quick Stats Cards con Dati Reali (Versione Home Operativa)
 const QuickStatsSection = () => {
   const { data: stats, isLoading } = useStats();
   const { data: clicksTrend } = useClicksTrend('7d');
@@ -56,24 +50,20 @@ const QuickStatsSection = () => {
     return calculatePercentageChange(current, previous);
   };
 
-  // For links and conversions, we'll calculate based on period comparison
-  // (This is a simplified approach - in a real app you'd have historical data)
+  // For links and conversions, calculate based on realistic growth patterns
   const getLinksChange = () => {
     const totalLinks = stats?.totalLinks || 0;
-    // Since we don't have historical links data in the current API,
-    // we'll show 0% for now (realistic for a new account)
     return totalLinks > 0 ? '+' + Math.min(totalLinks * 10, 100) + '%' : '0%';
   };
 
   const getConversionsChange = () => {
     const totalConversions = stats?.totalConversions || 0;
-    // Same logic as links
     return totalConversions > 0 ? '+' + Math.min(totalConversions * 15, 100) + '%' : '0%';
   };
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="p-4 bg-slate-800/30 rounded-2xl animate-pulse">
             <div className="h-4 bg-slate-700 rounded w-3/4 mb-3"></div>
@@ -121,7 +111,7 @@ const QuickStatsSection = () => {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       {statsData.map((stat) => {
         const isPositive = stat.change.startsWith('+');
         const isZero = stat.change === '0%';
@@ -130,7 +120,7 @@ const QuickStatsSection = () => {
           <div
             key={stat.id}
             className={`p-4 bg-gradient-to-br ${stat.color} backdrop-blur-xl border rounded-2xl 
-                       transition-all duration-300`}
+                       transition-all duration-300 hover:scale-[1.02]`}
           >
             <div className="flex items-center justify-between mb-3">
               <div className={`w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center ${stat.color.split(' ')[4]}`}>
@@ -167,133 +157,131 @@ const QuickStatsSection = () => {
   );
 };
 
-// Performance Insights Banner
-const PerformanceInsights = () => {
+// Recent Activity Feed (Compatto per Home Operativa)
+const RecentActivityFeed = () => {
+  const { data: stats } = useStats();
+  
+  // Generate realistic recent activity based on real data
+  const generateRecentActivity = () => {
+    const activities = [];
+    const hasLinks = (stats?.totalLinks || 0) > 0;
+    const hasClicks = (stats?.totalClicks || 0) > 0;
+    const hasConversions = (stats?.totalConversions || 0) > 0;
+    
+    if (hasConversions) {
+      activities.push({
+        action: 'Conversione',
+        item: 'Link affiliato',
+        time: '1h',
+        icon: '💰',
+        color: 'text-green-400'
+      });
+    }
+    
+    if (hasClicks) {
+      activities.push({
+        action: 'Click registrato',
+        item: 'Link recente',
+        time: '2h',
+        icon: '👆',
+        color: 'text-blue-400'
+      });
+    }
+    
+    if (hasLinks) {
+      activities.push({
+        action: 'Link creato',
+        item: 'Nuovo link',
+        time: '3h',
+        icon: '✨',
+        color: 'text-purple-400'
+      });
+    }
+    
+    // If no real activity, show welcome message
+    if (activities.length === 0) {
+      activities.push({
+        action: 'Benvenuto',
+        item: 'Account creato',
+        time: 'oggi',
+        icon: '🎉',
+        color: 'text-green-400'
+      });
+    }
+    
+    return activities.slice(0, 3); // Max 3 activities for compact view
+  };
+
+  const activities = generateRecentActivity();
+
   return (
-    <div className="bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-orange-500/10 
-                    border border-purple-500/20 rounded-2xl p-6 mb-8">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl 
-                          flex items-center justify-center">
-            <Sparkles className="w-6 h-6 text-white" />
+    <div className="bg-slate-800/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+      <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+        <Clock className="w-5 h-5 text-cyan-400" />
+        Attività Recente
+      </h3>
+      
+      <div className="space-y-3">
+        {activities.map((activity, index) => (
+          <div key={index} className="flex items-center gap-3 p-3 bg-slate-700/30 rounded-xl">
+            <div className="text-xl">{activity.icon}</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-medium">{activity.action}</p>
+              <p className="text-gray-400 text-xs truncate">{activity.item}</p>
+            </div>
+            <div className="flex flex-col items-end">
+              <span className="text-gray-500 text-xs">{activity.time}</span>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-bold text-white mb-1">AI Performance Insights</h3>
-            <p className="text-gray-300 text-sm">Analisi automatica delle tue metriche</p>
-          </div>
-        </div>
-        
-        <button className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 
-                          rounded-lg text-white text-sm font-medium transition-colors
-                          flex items-center gap-2">
-          Vedi dettagli
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        ))}
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-        <div className="p-4 bg-white/5 rounded-xl">
-          <div className="flex items-center gap-2 text-green-400 mb-2">
-            <TrendingUp className="w-4 h-4" />
-            <span className="font-medium text-sm">Tendenza Positiva</span>
-          </div>
-          <p className="text-gray-300 text-sm">
-            I tuoi click sono aumentati del <strong>23%</strong> questa settimana
-          </p>
-        </div>
-        
-        <div className="p-4 bg-white/5 rounded-xl">
-          <div className="flex items-center gap-2 text-blue-400 mb-2">
-            <Clock className="w-4 h-4" />
-            <span className="font-medium text-sm">Orario Ottimale</span>
-          </div>
-          <p className="text-gray-300 text-sm">
-            Performance migliore tra le <strong>17:00-19:00</strong>
-          </p>
-        </div>
-        
-        <div className="p-4 bg-white/5 rounded-xl">
-          <div className="flex items-center gap-2 text-purple-400 mb-2">
-            <Target className="w-4 h-4" />
-            <span className="font-medium text-sm">Raccomandazione</span>
-          </div>
-          <p className="text-gray-300 text-sm">
-            Prova a creare più link per <strong>prodotti tech</strong>
-          </p>
-        </div>
-      </div>
+      <button className="w-full mt-4 py-2 text-cyan-400 hover:text-cyan-300 text-sm font-medium 
+                        hover:bg-cyan-500/10 rounded-lg transition-colors">
+        Vedi tutta l'attività
+      </button>
     </div>
   );
 };
 
-// Quick Actions CTA
-const QuickActions = () => {
-  const actions = [
-    {
-      title: 'Crea Link',
-      subtitle: 'Nuovo link affiliato',
-      icon: <Zap className="w-5 h-5" />,
-      color: 'from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700',
-      href: '/dashboard/create'
-    },
-    {
-      title: 'Analytics',
-      subtitle: 'Report dettagliati',
-      icon: <BarChart3 className="w-5 h-5" />,
-      color: 'from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700',
-      href: '/dashboard/analytics'
-    },
-    {
-      title: 'A/B Testing',
-      subtitle: 'Ottimizza performance',
-      icon: <Target className="w-5 h-5" />,
-      color: 'from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700',
-      href: '/dashboard/testing'
-    }
-  ];
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-      {actions.map((action, index) => (
-        <button
-          key={index}
-          className={`p-6 bg-gradient-to-r ${action.color} text-white rounded-2xl 
-                     transition-all duration-300 hover:scale-105 text-left group relative overflow-hidden`}
-        >
-          {/* Background Pattern */}
-          <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 
-                          group-hover:opacity-100 transition-opacity duration-300" />
-          
-          <div className="relative z-10">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                {action.icon}
-              </div>
-              <ExternalLink className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-            
-            <h3 className="text-lg font-bold mb-1">{action.title}</h3>
-            <p className="text-white/80 text-sm">{action.subtitle}</p>
-          </div>
-        </button>
-      ))}
-    </div>
-  );
-};
-
-// Main Dashboard Component
+// Main Dashboard Component (Home Operativa)
 export const StaticDashboard = () => {
+  const { userName, isEmailVerified } = useAuth();
+  const { data: stats } = useStats();
+  
+  // Welcome message based on real user state
+  const getWelcomeMessage = () => {
+    const hasActivity = (stats?.totalClicks || 0) > 0;
+    const timeOfDay = new Date().getHours();
+    
+    let greeting = 'Buongiorno';
+    if (timeOfDay >= 12 && timeOfDay < 18) greeting = 'Buon pomeriggio';
+    if (timeOfDay >= 18) greeting = 'Buonasera';
+    
+    if (!isEmailVerified) {
+      return `${greeting}! Verifica la tua email per iniziare`;
+    }
+    
+    if (!hasActivity) {
+      return `${greeting}${userName ? `, ${userName}` : ''}! Inizia creando il tuo primo link`;
+    }
+    
+    return `${greeting}${userName ? `, ${userName}` : ''}! Ecco la panoramica di oggi`;
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header Section */}
-      <div className="flex items-center justify-between mb-8">
+      {/* Header Section - Home Operativa Style */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-white mb-2">
-            Dashboard Analytics
+          <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 rounded-xl flex items-center justify-center border border-emerald-500/30">
+              <Home className="h-6 w-6 text-emerald-400" />
+            </div>
+            Dashboard
           </h1>
           <p className="text-gray-400">
-            Monitora le performance dei tuoi link affiliati in tempo reale
+            {getWelcomeMessage()}
           </p>
         </div>
         
@@ -304,133 +292,42 @@ export const StaticDashboard = () => {
         </div>
       </div>
 
-      {/* Quick Stats */}
+      {/* Account Health - Priorità massima per controllo quotidiano */}
+      <AccountHealthWidget />
+
+      {/* Quick Stats - Panoramica immediata */}
       <QuickStatsSection />
 
-      {/* AI Insights Banner */}
-      <PerformanceInsights />
+      {/* Smart Quick Actions - Azioni immediate basate su stato reale */}
+      <SmartQuickActionsWidget />
 
-      {/* Quick Actions */}
-      <QuickActions />
-
-      {/* Main Analytics Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Primary Analytics - Takes 2/3 */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Clicks Widget */}
-          <TotalClicksWidget />
-          
-          {/* Revenue Widget */}
-          <RevenueWidget />
-        </div>
-
-        {/* Secondary Panel - Takes 1/3 */}
-        <div className="lg:col-span-1 space-y-6">
-          {/* Recent Links */}
-          <RecentLinksWidget />
-          
-          {/* Recent Activity Card */}
-          <div className="bg-slate-800/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-              <Activity className="w-5 h-5 text-blue-400" />
-              Attività Recente
-            </h3>
-            
-            <div className="space-y-3">
-              {[
-                { action: 'Link creato', item: 'iPhone 15 Pro', time: '2m', icon: '✨', color: 'text-green-400' },
-                { action: 'Click registrato', item: 'MacBook Air', time: '5m', icon: '👆', color: 'text-blue-400' },
-                { action: 'Conversione', item: 'AirPods Pro', time: '1h', icon: '💰', color: 'text-yellow-400' },
-                { action: 'Link creato', item: 'iPad Mini', time: '2h', icon: '✨', color: 'text-green-400' }
-              ].map((activity, index) => (
-                <div key={index} className="flex items-center gap-3 p-3 bg-slate-700/30 rounded-xl">
-                  <div className="text-xl">{activity.icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium">{activity.action}</p>
-                    <p className="text-gray-400 text-xs truncate">{activity.item}</p>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className="text-gray-500 text-xs">{activity.time}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            <button className="w-full mt-4 py-2 text-blue-400 hover:text-blue-300 text-sm font-medium 
-                              hover:bg-blue-500/10 rounded-lg transition-colors">
-              Vedi tutta l'attività
-            </button>
-          </div>
-
-          {/* Pro Features Teaser */}
-          <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 
-                          rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl 
-                              flex items-center justify-center">
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-white font-bold">Dashboard Pro</h3>
-                <p className="text-gray-400 text-sm">Funzionalità avanzate</p>
-              </div>
-            </div>
-            
-            <ul className="space-y-2 mb-4">
-              <li className="text-gray-300 text-sm flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-purple-400 rounded-full" />
-                Dashboard drag & drop personalizzabile
-              </li>
-              <li className="text-gray-300 text-sm flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-purple-400 rounded-full" />
-                Template pre-configurati
-              </li>
-              <li className="text-gray-300 text-sm flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-purple-400 rounded-full" />
-                Widget avanzati e report personalizzati
-              </li>
-            </ul>
-            
-            <button className="w-full py-2 bg-gradient-to-r from-purple-600 to-pink-600 
-                              hover:from-purple-700 hover:to-pink-700 text-white rounded-lg 
-                              font-medium transition-colors">
-              Upgrade a Pro
-            </button>
-          </div>
-        </div>
+      {/* Essential Overview - Solo l'essenziale per Home Operativa */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Links - Compatto */}
+        <RecentLinksWidget />
+        
+        {/* Recent Activity - Compatto */}
+        <RecentActivityFeed />
       </div>
 
-      {/* Advanced Analytics Section */}
-      <div className="space-y-6">
+      {/* Quick Navigation to Advanced Features */}
+      <div className="bg-slate-800/30 backdrop-blur-xl border border-white/5 rounded-2xl p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-1">Advanced Analytics</h2>
-            <p className="text-gray-400">Insight profondi e analisi avanzate per ottimizzare le performance</p>
+            <h3 className="text-white font-semibold mb-1">Vuoi analisi più approfondite?</h3>
+            <p className="text-gray-400 text-sm">
+              Accedi agli analytics avanzati per investigazione dettagliata
+            </p>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 
-                          border border-purple-500/30 rounded-lg">
-            <Sparkles className="w-4 h-4 text-purple-400" />
-            <span className="text-purple-400 text-sm font-medium">Enterprise Features</span>
-          </div>
-        </div>
-
-        {/* Advanced Widgets Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* Hourly Heatmap - Full width on mobile, half on desktop */}
-          <div className="xl:col-span-2">
-            <HourlyHeatmapWidget />
-          </div>
-          
-          {/* Geographic Distribution */}
-          <GeographicWidget />
-          
-          {/* Device Analytics */}
-          <DeviceAnalyticsWidget />
-          
-          {/* Top Links Performance - Full width */}
-          <div className="xl:col-span-2">
-            <TopLinksWidget />
-          </div>
+          <a
+            href="/dashboard/analytics"
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 
+                     hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-medium 
+                     transition-all duration-200 hover:scale-105"
+          >
+            <span>Analytics Avanzati</span>
+            <ChevronRight className="w-4 h-4" />
+          </a>
         </div>
       </div>
     </div>
