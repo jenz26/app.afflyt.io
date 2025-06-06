@@ -246,10 +246,10 @@ const RecentActivityFeed = () => {
 
 // Main Dashboard Component (Home Operativa)
 export const StaticDashboard = () => {
-  const { userName, isEmailVerified } = useAuth();
+  const { userName } = useAuth(); // ✅ Removed isEmailVerified (always verified via Magic Link)
   const { data: stats } = useStats();
   
-  // Welcome message based on real user state
+  // ✅ UPDATED: Welcome message without email verification checks
   const getWelcomeMessage = () => {
     const hasActivity = (stats?.totalClicks || 0) > 0;
     const timeOfDay = new Date().getHours();
@@ -258,10 +258,7 @@ export const StaticDashboard = () => {
     if (timeOfDay >= 12 && timeOfDay < 18) greeting = 'Buon pomeriggio';
     if (timeOfDay >= 18) greeting = 'Buonasera';
     
-    if (!isEmailVerified) {
-      return `${greeting}! Verifica la tua email per iniziare`;
-    }
-    
+    // ✅ Simplified logic - no email verification check needed
     if (!hasActivity) {
       return `${greeting}${userName ? `, ${userName}` : ''}! Inizia creando il tuo primo link`;
     }

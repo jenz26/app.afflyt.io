@@ -4,13 +4,54 @@
  * API Hooks for Afflyt.io
  * Provides React hooks for data fetching with authentication integration
  * 
- * @version 1.8.0 - Extended for Multi-Tags and Multi-Channels Support
- * @phase Frontend-Backend Integration
+ * @version 1.8.1 - Extended with Advanced Filter Options for Analytics
+ * @phase Frontend-Backend Integration + Advanced Analytics
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { AfflytApiError } from '@/lib/api';
+
+// ✨ NEW: Advanced Filter Options Types
+export interface AnalyticsFilterOptions {
+  startDate?: string;
+  endDate?: string;
+  linkId?: string;
+  channelId?: string;
+  amazonTagId?: string;
+  geo?: string;
+  device?: string;
+  browser?: string;
+  referer?: string;
+  subId?: string;
+}
+
+export interface LinkFilterOptions {
+  startDate?: string;
+  endDate?: string;
+  status?: 'active' | 'paused' | 'expired';
+  amazonTagId?: string;
+  channelId?: string;
+  // Existing pagination/sorting options
+  limit?: number;
+  offset?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export interface TrendFilterOptions {
+  startDate?: string;
+  endDate?: string;
+  granularity?: 'hourly' | 'daily' | 'weekly' | 'monthly';
+  linkId?: string;
+  channelId?: string;
+  amazonTagId?: string;
+  geo?: string;
+  device?: string;
+  browser?: string;
+  referer?: string;
+  subId?: string;
+}
 
 // Types for API responses
 export interface StatsData {
@@ -151,6 +192,19 @@ export const CHANNEL_TYPES = [
   { code: 'other', name: 'Altro', icon: '📦' },
 ];
 
+// ✨ NEW: Helper function to build URL parameters from filter options
+const buildUrlParams = (filters: Record<string, any>): URLSearchParams => {
+  const params = new URLSearchParams();
+  
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.append(key, String(value));
+    }
+  });
+  
+  return params;
+};
+
 // Generic hook for API calls with auth
 export function useApiCall<T = any>() {
   const [data, setData] = useState<T | null>(null);
@@ -230,17 +284,14 @@ export function useApiCall<T = any>() {
   };
 }
 
-// Hook for fetching user statistics/summary
+// ✨ UPDATED: Hook for fetching user statistics/summary with advanced filters
 export function useStats(autoFetch = true) {
   const [data, setData] = useState<StatsData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
-  const fetchStats = useCallback(async (dateRange?: {
-    startDate?: string;
-    endDate?: string;
-  }) => {
+  const fetchStats = useCallback(async (filters?: AnalyticsFilterOptions) => {
     if (!isLoggedIn) return;
 
     const apiClient = getAuthenticatedApiClient();
@@ -250,10 +301,7 @@ export function useStats(autoFetch = true) {
     setError(null);
 
     try {
-      const params = new URLSearchParams();
-      if (dateRange?.startDate) params.append('startDate', dateRange.startDate);
-      if (dateRange?.endDate) params.append('endDate', dateRange.endDate);
-      
+      const params = buildUrlParams(filters || {});
       const endpoint = `/api/user/analytics/summary${params.toString() ? `?${params.toString()}` : ''}`;
       const result = await apiClient.get<StatsData>(endpoint);
       
@@ -282,19 +330,14 @@ export function useStats(autoFetch = true) {
   };
 }
 
-// Hook for fetching user's affiliate links
+// ✨ UPDATED: Hook for fetching user's affiliate links with advanced filters
 export function useLinks(autoFetch = true) {
   const [data, setData] = useState<AffiliateLink[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
-  const fetchLinks = useCallback(async (options?: {
-    limit?: number;
-    offset?: number;
-    sortBy?: string;
-    sortOrder?: 'asc' | 'desc';
-  }) => {
+  const fetchLinks = useCallback(async (filters?: LinkFilterOptions) => {
     if (!isLoggedIn) return;
 
     const apiClient = getAuthenticatedApiClient();
@@ -304,12 +347,7 @@ export function useLinks(autoFetch = true) {
     setError(null);
 
     try {
-      const params = new URLSearchParams();
-      if (options?.limit) params.append('limit', options.limit.toString());
-      if (options?.offset) params.append('offset', options.offset.toString());
-      if (options?.sortBy) params.append('sortBy', options.sortBy);
-      if (options?.sortOrder) params.append('sortOrder', options.sortOrder);
-
+      const params = buildUrlParams(filters || {});
       const endpoint = `/api/user/links${params.toString() ? `?${params.toString()}` : ''}`;
       const result = await apiClient.get<AffiliateLink[]>(endpoint);
       
@@ -362,14 +400,14 @@ export function useLinks(autoFetch = true) {
   };
 }
 
-// Hook for fetching clicks trend data
-export function useClicksTrend(period: '24h' | '7d' | '30d' | '90d' | '12m' = '7d') {
+// ✨ UPDATED: Hook for fetching clicks trend data with advanced filters
+export function useClicksTrend(filters?: TrendFilterOptions, autoFetch = true) {
   const [data, setData] = useState<ClicksTrendData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
-  const fetchTrend = useCallback(async () => {
+  const fetchTrend = useCallback(async (customFilters?: TrendFilterOptions) => {
     if (!isLoggedIn) return;
 
     const apiClient = getAuthenticatedApiClient();
@@ -379,9 +417,12 @@ export function useClicksTrend(period: '24h' | '7d' | '30d' | '90d' | '12m' = '7
     setError(null);
 
     try {
-      const result = await apiClient.get<ClicksTrendData[]>(
-        `/api/user/analytics/clicks-trend?period=${period}`
-      );
+      // Use custom filters if provided, otherwise use the hook's filters
+      const activeFilters = customFilters || filters || {};
+      const params = buildUrlParams(activeFilters);
+      
+      const endpoint = `/api/user/analytics/clicks-trend${params.toString() ? `?${params.toString()}` : ''}`;
+      const result = await apiClient.get<ClicksTrendData[]>(endpoint);
       
       setData(result || []);
     } catch (err) {
@@ -392,13 +433,13 @@ export function useClicksTrend(period: '24h' | '7d' | '30d' | '90d' | '12m' = '7
     } finally {
       setIsLoading(false);
     }
-  }, [period, isLoggedIn, getAuthenticatedApiClient]);
+  }, [filters, isLoggedIn, getAuthenticatedApiClient]);
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (autoFetch && isLoggedIn) {
       fetchTrend();
     }
-  }, [isLoggedIn, fetchTrend]);
+  }, [autoFetch, isLoggedIn, fetchTrend]);
 
   return {
     data,
@@ -408,14 +449,14 @@ export function useClicksTrend(period: '24h' | '7d' | '30d' | '90d' | '12m' = '7
   };
 }
 
-// Hook for fetching revenue trend data
-export function useRevenueTrend(period: '24h' | '7d' | '30d' | '90d' | '12m' = '7d') {
+// ✨ UPDATED: Hook for fetching revenue trend data with advanced filters
+export function useRevenueTrend(filters?: TrendFilterOptions, autoFetch = true) {
   const [data, setData] = useState<RevenueTrendData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
-  const fetchTrend = useCallback(async () => {
+  const fetchTrend = useCallback(async (customFilters?: TrendFilterOptions) => {
     if (!isLoggedIn) return;
 
     const apiClient = getAuthenticatedApiClient();
@@ -425,9 +466,12 @@ export function useRevenueTrend(period: '24h' | '7d' | '30d' | '90d' | '12m' = '
     setError(null);
 
     try {
-      const result = await apiClient.get<RevenueTrendData[]>(
-        `/api/user/analytics/revenue-trend?period=${period}`
-      );
+      // Use custom filters if provided, otherwise use the hook's filters
+      const activeFilters = customFilters || filters || {};
+      const params = buildUrlParams(activeFilters);
+      
+      const endpoint = `/api/user/analytics/revenue-trend${params.toString() ? `?${params.toString()}` : ''}`;
+      const result = await apiClient.get<RevenueTrendData[]>(endpoint);
       
       setData(result || []);
     } catch (err) {
@@ -438,13 +482,13 @@ export function useRevenueTrend(period: '24h' | '7d' | '30d' | '90d' | '12m' = '
     } finally {
       setIsLoading(false);
     }
-  }, [period, isLoggedIn, getAuthenticatedApiClient]);
+  }, [filters, isLoggedIn, getAuthenticatedApiClient]);
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (autoFetch && isLoggedIn) {
       fetchTrend();
     }
-  }, [isLoggedIn, fetchTrend]);
+  }, [autoFetch, isLoggedIn, fetchTrend]);
 
   return {
     data,
