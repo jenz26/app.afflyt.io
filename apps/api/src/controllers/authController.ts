@@ -5,6 +5,13 @@ import { Models } from '../models';
 import { User } from '../types';
 import { AuthRequest } from '../middleware/auth';
 import { sendMagicLinkEmail, sendWelcomeEmail } from '../services/emailService';
+import {
+  sendSuccess,
+  sendValidationError,
+  sendUnauthorizedError,
+  sendConflictError,
+  sendInternalError
+} from '../utils/responseHelpers';
 
 export class AuthController {
   constructor(private models: Models) {}
@@ -16,20 +23,14 @@ export class AuthController {
 
       // Validation
       if (!email || !password) {
-        res.status(400).json({
-          error: 'Email and password are required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Email and password are required');
         return;
       }
 
       // Check if user already exists
       const existingUser = await this.models.user.findByEmail(email);
       if (existingUser) {
-        res.status(409).json({
-          error: 'User already exists',
-          timestamp: new Date().toISOString()
-        });
+        sendConflictError(res, 'User already exists');
         return;
       }
 
@@ -71,28 +72,25 @@ export class AuthController {
         console.warn('Failed to send welcome email:', error);
       });
 
-      res.status(201).json({
-        success: true,
-        data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-            isEmailVerified: true
-          },
-          token: accessToken
+      const responseData = {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          isEmailVerified: true
         },
+        token: accessToken
+      };
+
+      sendSuccess(res, responseData, {
         message: 'User registered successfully',
-        timestamp: new Date().toISOString()
+        statusCode: 201
       });
     } catch (error) {
       console.error('Registration error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -102,30 +100,21 @@ export class AuthController {
       const { email, password } = req.body;
 
       if (!email || !password) {
-        res.status(400).json({
-          error: 'Email and password are required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Email and password are required');
         return;
       }
 
       // Find user
       const user = await this.models.user.findByEmail(email);
       if (!user || !user.passwordHash) {
-        res.status(401).json({
-          error: 'Invalid credentials',
-          timestamp: new Date().toISOString()
-        });
+        sendUnauthorizedError(res, 'Invalid credentials');
         return;
       }
 
       // Verify password
       const isValidPassword = await this.models.user.verifyPassword(password, user.passwordHash);
       if (!isValidPassword) {
-        res.status(401).json({
-          error: 'Invalid credentials',
-          timestamp: new Date().toISOString()
-        });
+        sendUnauthorizedError(res, 'Invalid credentials');
         return;
       }
 
@@ -139,28 +128,24 @@ export class AuthController {
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
 
-      res.status(200).json({
-        success: true,
-        data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-            isEmailVerified: user.isEmailVerified
-          },
-          token: accessToken
+      const responseData = {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          isEmailVerified: user.isEmailVerified
         },
-        message: 'Login successful',
-        timestamp: new Date().toISOString()
+        token: accessToken
+      };
+
+      sendSuccess(res, responseData, {
+        message: 'Login successful'
       });
     } catch (error) {
       console.error('Login error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -170,20 +155,14 @@ export class AuthController {
       const { email, locale = 'it', returnUrl } = req.body;
 
       if (!email) {
-        res.status(400).json({
-          error: 'Email is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Email is required');
         return;
       }
 
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        res.status(400).json({
-          error: 'Invalid email format',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Invalid email format');
         return;
       }
 
@@ -225,10 +204,7 @@ export class AuthController {
 
       if (!emailResult.success) {
         console.error('Magic link email failed:', emailResult.error);
-        res.status(500).json({
-          error: 'Failed to send magic link email',
-          timestamp: new Date().toISOString()
-        });
+        sendInternalError(res, 'Failed to send magic link email');
         return;
       }
 
@@ -239,20 +215,16 @@ export class AuthController {
         console.log(`🔗 Magic link for ${email}: ${magicLink}`);
       }
 
-      res.status(200).json({
-        success: true,
-        message: 'Magic link sent successfully',
-        data: {
-          messageId: emailResult.messageId
-        },
-        timestamp: new Date().toISOString()
+      const responseData = {
+        messageId: emailResult.messageId
+      };
+
+      sendSuccess(res, responseData, {
+        message: 'Magic link sent successfully'
       });
     } catch (error) {
       console.error('Magic link error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -262,10 +234,7 @@ export class AuthController {
       const { token } = req.body;
 
       if (!token) {
-        res.status(400).json({
-          error: 'Token is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Token is required');
         return;
       }
 
@@ -277,29 +246,20 @@ export class AuthController {
       };
       
       if (decoded.purpose !== 'magic_link') {
-        res.status(400).json({
-          error: 'Invalid token purpose',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Invalid token purpose');
         return;
       }
 
       // Find user
       const user = await this.models.user.findById(decoded.userId);
       if (!user) {
-        res.status(404).json({
-          error: 'User not found',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'User not found');
         return;
       }
 
       // Verify email matches token
       if (user.email !== decoded.email) {
-        res.status(400).json({
-          error: 'Token email mismatch',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Token email mismatch');
         return;
       }
 
@@ -316,51 +276,8 @@ export class AuthController {
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
 
-      res.status(200).json({
-        success: true,
-        data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : null,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-            isEmailVerified: user.isEmailVerified,
-            balance: user.balance,
-            lastLoginAt: user.lastLoginAt,
-            createdAt: user.createdAt
-          },
-          token: accessToken
-        },
-        message: 'Magic link verified successfully',
-        timestamp: new Date().toISOString()
-      });
-    } catch (error) {
-      if (error instanceof jwt.JsonWebTokenError) {
-        res.status(401).json({
-          error: 'Invalid or expired magic link',
-          timestamp: new Date().toISOString()
-        });
-        return;
-      }
-
-      console.error('Magic link verification error:', error);
-      res.status(401).json({
-        error: 'Invalid or expired token',
-        timestamp: new Date().toISOString()
-      });
-    }
-  };
-
-  // Get current user profile
-  getProfile = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-      const user = req.user!;
-
-      res.status(200).json({
-        success: true,
-        data: {
+      const responseData = {
+        user: {
           id: user.id,
           email: user.email,
           name: user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : null,
@@ -369,20 +286,51 @@ export class AuthController {
           role: user.role,
           isEmailVerified: user.isEmailVerified,
           balance: user.balance,
-          amazonAssociateTag: user.amazonAssociateTag,
-          websiteUrl: user.websiteUrl,
-          companyName: user.companyName,
           lastLoginAt: user.lastLoginAt,
           createdAt: user.createdAt
         },
-        timestamp: new Date().toISOString()
+        token: accessToken
+      };
+
+      sendSuccess(res, responseData, {
+        message: 'Magic link verified successfully'
       });
     } catch (error) {
+      if (error instanceof jwt.JsonWebTokenError) {
+        sendUnauthorizedError(res, 'Invalid or expired magic link');
+        return;
+      }
+
+      console.error('Magic link verification error:', error);
+      sendUnauthorizedError(res, 'Invalid or expired token');
+    }
+  };
+
+  // Get current user profile
+  getProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+      const user = req.user!;
+
+      const responseData = {
+        id: user.id,
+        email: user.email,
+        name: user.firstName || user.lastName ? `${user.firstName} ${user.lastName}`.trim() : null,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified,
+        balance: user.balance,
+        amazonAssociateTag: user.amazonAssociateTag,
+        websiteUrl: user.websiteUrl,
+        companyName: user.companyName,
+        lastLoginAt: user.lastLoginAt,
+        createdAt: user.createdAt
+      };
+
+      sendSuccess(res, responseData);
+    } catch (error) {
       console.error('Get profile error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -393,35 +341,29 @@ export class AuthController {
       const user = req.user!;
 
       if (!name) {
-        res.status(400).json({
-          error: 'API key name is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'API key name is required');
         return;
       }
 
       const apiKey = await this.models.user.generateApiKey(user.id, name);
 
-      res.status(201).json({
-        success: true,
-        data: {
-          apiKey: {
-            id: apiKey.id,
-            name: apiKey.name,
-            key: apiKey.keyHash, // Show the actual key only once
-            isActive: apiKey.isActive,
-            createdAt: apiKey.createdAt
-          }
-        },
+      const responseData = {
+        apiKey: {
+          id: apiKey.id,
+          name: apiKey.name,
+          key: apiKey.keyHash, // Show the actual key only once
+          isActive: apiKey.isActive,
+          createdAt: apiKey.createdAt
+        }
+      };
+
+      sendSuccess(res, responseData, {
         message: 'API key generated successfully. Save this key as it will not be shown again.',
-        timestamp: new Date().toISOString()
+        statusCode: 201
       });
     } catch (error) {
       console.error('Generate API key error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -431,17 +373,12 @@ export class AuthController {
       // For JWT, logout is typically handled client-side by removing the token
       // We could implement a token blacklist here if needed
       
-      res.status(200).json({
-        success: true,
-        message: 'Logout successful',
-        timestamp: new Date().toISOString()
+      sendSuccess(res, null, {
+        message: 'Logout successful'
       });
     } catch (error) {
       console.error('Logout error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 }

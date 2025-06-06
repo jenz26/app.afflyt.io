@@ -2,6 +2,10 @@ import { Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { AnalyticsSummary, TrendDataPoint, DistributionDataPoint } from '../types';
+import {
+  sendSuccess,
+  sendInternalError
+} from '../utils/responseHelpers';
 
 export class AnalyticsController {
   constructor(private models: Models) {}
@@ -45,17 +49,12 @@ export class AnalyticsController {
         }
       };
 
-      res.status(200).json({
-        success: true,
-        data: { summary },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { summary };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching analytics summary:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -73,17 +72,12 @@ export class AnalyticsController {
       const days = this.parsePeriod(period as string);
       const trend = await this.models.click.getClicksTrend(user.id, days);
 
-      res.status(200).json({
-        success: true,
-        data: { trend },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { trend };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching clicks trend:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -109,17 +103,12 @@ export class AnalyticsController {
         granularity as any
       );
 
-      res.status(200).json({
-        success: true,
-        data: { trend },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { trend };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching revenue trend:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -131,17 +120,12 @@ export class AnalyticsController {
 
       const distribution = await this.models.click.getGeoDistribution(user.id);
 
-      res.status(200).json({
-        success: true,
-        data: { distribution },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { distribution };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching geo distribution:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -153,17 +137,12 @@ export class AnalyticsController {
 
       const distribution = await this.models.click.getDeviceDistribution(user.id);
 
-      res.status(200).json({
-        success: true,
-        data: { distribution },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { distribution };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching device distribution:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -180,17 +159,12 @@ export class AnalyticsController {
         { label: 'Edge', value: 3, percentage: 4.4 }
       ];
 
-      res.status(200).json({
-        success: true,
-        data: { distribution },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { distribution };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching browser distribution:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -208,17 +182,12 @@ export class AnalyticsController {
         { label: 'Other', value: 5, percentage: 6.0 }
       ];
 
-      res.status(200).json({
-        success: true,
-        data: { distribution },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { distribution };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching referer distribution:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -236,17 +205,12 @@ export class AnalyticsController {
         { label: 'email_newsletter', value: 7, percentage: 10.0 }
       ];
 
-      res.status(200).json({
-        success: true,
-        data: { distribution },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { distribution };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching subid distribution:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -310,7 +274,7 @@ export class AnalyticsController {
         item.intensity = maxClicks > 0 ? item.clicks / maxClicks : 0;
       });
 
-      const response = {
+      const responseData = {
         data: completeData,
         totalClicks,
         maxClicks,
@@ -323,18 +287,11 @@ export class AnalyticsController {
         }
       };
 
-      res.status(200).json({
-        success: true,
-        data: response,
-        timestamp: new Date().toISOString()
-      });
+      sendSuccess(res, responseData);
 
     } catch (error) {
       console.error('Error fetching hourly heatmap:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -378,17 +335,12 @@ export class AnalyticsController {
         linksWithMetrics.sort((a, b) => b.totalRevenue - a.totalRevenue);
       }
 
-      res.status(200).json({
-        success: true,
-        data: { topLinks: linksWithMetrics },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { topLinks: linksWithMetrics };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching top performing links:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 

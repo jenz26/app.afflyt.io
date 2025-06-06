@@ -2,6 +2,11 @@ import { Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { DashboardLayoutItem } from '../types';
+import {
+  sendSuccess,
+  sendValidationError,
+  sendInternalError
+} from '../utils/responseHelpers';
 
 export class DashboardController {
   constructor(private models: Models) {}
@@ -26,19 +31,14 @@ export class DashboardController {
 
       const layout = userSetting?.dashboardLayout || defaultLayout;
 
-      res.status(200).json({
-        success: true,
-        data: {
-          layout
-        },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = {
+        layout
+      };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching dashboard layout:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -49,10 +49,7 @@ export class DashboardController {
       const { layout } = req.body;
 
       if (!layout || !Array.isArray(layout)) {
-        res.status(400).json({
-          error: 'Layout must be an array',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Layout must be an array');
         return;
       }
 
@@ -67,10 +64,7 @@ export class DashboardController {
       );
 
       if (!isValidLayout) {
-        res.status(400).json({
-          error: 'Invalid layout format. Each item must have i, x, y, w, h properties',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Invalid layout format. Each item must have i, x, y, w, h properties');
         return;
       }
 
@@ -94,10 +88,7 @@ export class DashboardController {
       );
 
       if (hasInvalidWidgets) {
-        res.status(400).json({
-          error: 'Invalid widget IDs found in layout',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Invalid widget IDs found in layout');
         return;
       }
 
@@ -107,20 +98,16 @@ export class DashboardController {
         layout
       );
 
-      res.status(200).json({
-        success: true,
-        data: {
-          layout: userSetting.dashboardLayout
-        },
-        message: 'Dashboard layout updated successfully',
-        timestamp: new Date().toISOString()
+      const responseData = {
+        layout: userSetting.dashboardLayout
+      };
+
+      sendSuccess(res, responseData, {
+        message: 'Dashboard layout updated successfully'
       });
     } catch (error) {
       console.error('Error updating dashboard layout:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 }

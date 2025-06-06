@@ -2,6 +2,15 @@ import { Request, Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { ObjectId } from 'mongodb';
+import {
+  sendSuccess,
+  sendValidationError,
+  sendNotFoundError,
+  sendForbiddenError,
+  sendConflictError,
+  sendInternalError,
+  createPagination
+} from '../utils/responseHelpers';
 
 export class ConversionController {
   constructor(private models: Models) {}
@@ -56,24 +65,16 @@ export class ConversionController {
         })
       );
 
-      res.status(200).json({
-        success: true,
-        data: {
-          conversions: conversionsWithLinkData,
-          pagination: {
-            limit: filters.limit,
-            offset: filters.offset,
-            total: conversionsWithLinkData.length
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = {
+        conversions: conversionsWithLinkData
+      };
+
+      const pagination = createPagination(filters.limit, filters.offset, conversionsWithLinkData.length);
+
+      sendSuccess(res, responseData, { pagination });
     } catch (error) {
       console.error('Error fetching user conversions:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -90,10 +91,7 @@ export class ConversionController {
 
       // Validazione parametri obbligatori
       if (!trackingId || payoutAmount === undefined) {
-        res.status(400).json({
-          error: 'trackingId and payoutAmount are required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'trackingId and payoutAmount are required');
         return;
       }
 
@@ -101,10 +99,7 @@ export class ConversionController {
       const click = await this.models.click.findByTrackingId(trackingId);
 
       if (!click) {
-        res.status(404).json({
-          error: 'Click not found for the provided trackingId',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Click not found for the provided trackingId');
         return;
       }
 
@@ -112,10 +107,7 @@ export class ConversionController {
       const link = await this.models.affiliateLink.findByHash(click.linkHash);
       
       if (!link) {
-        res.status(404).json({
-          error: 'Link not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Link');
         return;
       }
 
@@ -123,10 +115,7 @@ export class ConversionController {
       const existingConversion = await this.models.conversion.findByTrackingId(trackingId);
       
       if (existingConversion) {
-        res.status(409).json({
-          error: 'Conversion already exists for this trackingId',
-          timestamp: new Date().toISOString()
-        });
+        sendConflictError(res, 'Conversion already exists for this trackingId');
         return;
       }
 
@@ -152,22 +141,19 @@ export class ConversionController {
         totalRevenue: conversionData.payoutAmount
       });
 
-      res.status(201).json({
-        success: true,
-        data: {
-          conversionId: conversion._id,
-          trackingId: conversion.trackingId,
-          status: conversion.status
-        },
+      const responseData = {
+        conversionId: conversion._id,
+        trackingId: conversion.trackingId,
+        status: conversion.status
+      };
+
+      sendSuccess(res, responseData, {
         message: 'Conversion tracked successfully',
-        timestamp: new Date().toISOString()
+        statusCode: 201
       });
     } catch (error) {
       console.error('Error tracking conversion:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -180,18 +166,12 @@ export class ConversionController {
 
       // Solo admin possono modificare lo stato delle conversioni
       if (user.role !== 'admin') {
-        res.status(403).json({
-          error: 'Access denied. Admin role required.',
-          timestamp: new Date().toISOString()
-        });
+        sendForbiddenError(res, 'Access denied. Admin role required.');
         return;
       }
 
       if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
-        res.status(400).json({
-          error: 'Valid status is required (pending, approved, rejected)',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Valid status is required (pending, approved, rejected)');
         return;
       }
 
@@ -202,24 +182,16 @@ export class ConversionController {
       );
 
       if (!updated) {
-        res.status(404).json({
-          error: 'Conversion not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Conversion');
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        message: 'Conversion status updated successfully',
-        timestamp: new Date().toISOString()
+      sendSuccess(res, null, {
+        message: 'Conversion status updated successfully'
       });
     } catch (error) {
       console.error('Error updating conversion status:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -230,17 +202,12 @@ export class ConversionController {
 
       const stats = await this.models.conversion.getUserConversionStats(user.id);
 
-      res.status(200).json({
-        success: true,
-        data: { stats },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { stats };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching conversion stats:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 }

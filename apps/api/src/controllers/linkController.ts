@@ -2,6 +2,14 @@ import { Request, Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { AffiliateLink } from '../types';
+import {
+  sendSuccess,
+  sendValidationError,
+  sendNotFoundError,
+  sendForbiddenError,
+  sendInternalError,
+  createPagination
+} from '../utils/responseHelpers';
 
 export class LinkController {
   constructor(private models: Models) {}
@@ -14,10 +22,7 @@ export class LinkController {
 
       // Validation
       if (!originalUrl) {
-        res.status(400).json({
-          error: 'Original URL is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Original URL is required');
         return;
       }
 
@@ -25,10 +30,7 @@ export class LinkController {
       try {
         new URL(originalUrl);
       } catch {
-        res.status(400).json({
-          error: 'Invalid URL format',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Invalid URL format');
         return;
       }
 
@@ -42,31 +44,28 @@ export class LinkController {
 
       const affiliateLink = await this.models.affiliateLink.create(linkData);
 
-      res.status(201).json({
-        success: true,
-        data: {
-          link: {
-            hash: affiliateLink.hash,
-            originalUrl: affiliateLink.originalUrl,
-            shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${affiliateLink.hash}`,
-            tag: affiliateLink.tag,
-            isActive: affiliateLink.isActive,
-            clickCount: affiliateLink.clickCount,
-            uniqueClickCount: affiliateLink.uniqueClickCount,
-            conversionCount: affiliateLink.conversionCount,
-            totalRevenue: affiliateLink.totalRevenue,
-            createdAt: affiliateLink.createdAt
-          }
-        },
+      const linkResponse = {
+        link: {
+          hash: affiliateLink.hash,
+          originalUrl: affiliateLink.originalUrl,
+          shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${affiliateLink.hash}`,
+          tag: affiliateLink.tag,
+          isActive: affiliateLink.isActive,
+          clickCount: affiliateLink.clickCount,
+          uniqueClickCount: affiliateLink.uniqueClickCount,
+          conversionCount: affiliateLink.conversionCount,
+          totalRevenue: affiliateLink.totalRevenue,
+          createdAt: affiliateLink.createdAt
+        }
+      };
+
+      sendSuccess(res, linkResponse, {
         message: 'Affiliate link created successfully',
-        timestamp: new Date().toISOString()
+        statusCode: 201
       });
     } catch (error) {
       console.error('Create link error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -76,10 +75,13 @@ export class LinkController {
       const user = req.user!;
       const { limit = '50', offset = '0' } = req.query;
 
+      const limitNum = parseInt(limit as string);
+      const offsetNum = parseInt(offset as string);
+
       const links = await this.models.affiliateLink.findByUserId(
         user.id,
-        parseInt(limit as string),
-        parseInt(offset as string)
+        limitNum,
+        offsetNum
       );
 
       const linksWithShortUrls = links.map(link => ({
@@ -96,24 +98,16 @@ export class LinkController {
         updatedAt: link.updatedAt
       }));
 
-      res.status(200).json({
-        success: true,
-        data: {
-          links: linksWithShortUrls,
-          pagination: {
-            limit: parseInt(limit as string),
-            offset: parseInt(offset as string),
-            total: linksWithShortUrls.length
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = {
+        links: linksWithShortUrls
+      };
+
+      const pagination = createPagination(limitNum, offsetNum, linksWithShortUrls.length);
+
+      sendSuccess(res, responseData, { pagination });
     } catch (error) {
       console.error('Get links error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -124,57 +118,43 @@ export class LinkController {
       const user = req.user!;
 
       if (!hash) {
-        res.status(400).json({
-          error: 'Hash parameter is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Hash parameter is required');
         return;
       }
 
       const link = await this.models.affiliateLink.findByHash(hash);
 
       if (!link) {
-        res.status(404).json({
-          error: 'Link not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Link');
         return;
       }
 
       // Check if user owns this link
       if (link.userId !== user.id) {
-        res.status(403).json({
-          error: 'Access denied',
-          timestamp: new Date().toISOString()
-        });
+        sendForbiddenError(res);
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        data: {
-          link: {
-            hash: link.hash,
-            originalUrl: link.originalUrl,
-            shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${link.hash}`,
-            tag: link.tag,
-            isActive: link.isActive,
-            clickCount: link.clickCount,
-            uniqueClickCount: link.uniqueClickCount,
-            conversionCount: link.conversionCount,
-            totalRevenue: link.totalRevenue,
-            createdAt: link.createdAt,
-            updatedAt: link.updatedAt
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
+      const linkResponse = {
+        link: {
+          hash: link.hash,
+          originalUrl: link.originalUrl,
+          shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${link.hash}`,
+          tag: link.tag,
+          isActive: link.isActive,
+          clickCount: link.clickCount,
+          uniqueClickCount: link.uniqueClickCount,
+          conversionCount: link.conversionCount,
+          totalRevenue: link.totalRevenue,
+          createdAt: link.createdAt,
+          updatedAt: link.updatedAt
+        }
+      };
+
+      sendSuccess(res, linkResponse);
     } catch (error) {
       console.error('Get link by hash error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -184,10 +164,7 @@ export class LinkController {
       const { hash } = req.params;
 
       if (!hash) {
-        res.status(400).json({
-          error: 'Hash parameter is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Hash parameter is required');
         return;
       }
 
@@ -195,10 +172,7 @@ export class LinkController {
       const link = await this.models.affiliateLink.findByHash(hash);
 
       if (!link || !link.isActive) {
-        res.status(404).json({
-          error: 'Link not found or inactive',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Link not found or inactive');
         return;
       }
 
@@ -235,10 +209,7 @@ export class LinkController {
       res.redirect(302, link.originalUrl);
     } catch (error) {
       console.error('Redirect error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -265,19 +236,14 @@ export class LinkController {
         createdAt: link.createdAt
       }));
 
-      res.status(200).json({
-        success: true,
-        data: {
-          recentLinks: linksWithShortUrls
-        },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = {
+        recentLinks: linksWithShortUrls
+      };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Get recent links error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -307,19 +273,14 @@ export class LinkController {
         earningsPerClick: link.clickCount > 0 ? link.totalRevenue / link.clickCount : 0
       }));
 
-      res.status(200).json({
-        success: true,
-        data: {
-          topLinks: linksWithShortUrls
-        },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = {
+        topLinks: linksWithShortUrls
+      };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Get top performing links error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -335,24 +296,19 @@ export class LinkController {
       const earningsPerClick = stats.totalClicks > 0 ? stats.totalRevenue / stats.totalClicks : 0;
       const uniqueClickRate = stats.totalClicks > 0 ? (stats.totalUniqueClicks / stats.totalClicks) * 100 : 0;
 
-      res.status(200).json({
-        success: true,
-        data: {
-          stats: {
-            ...stats,
-            conversionRate: Math.round(conversionRate * 100) / 100,
-            earningsPerClick: Math.round(earningsPerClick * 100) / 100,
-            uniqueClickRate: Math.round(uniqueClickRate * 100) / 100
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = {
+        stats: {
+          ...stats,
+          conversionRate: Math.round(conversionRate * 100) / 100,
+          earningsPerClick: Math.round(earningsPerClick * 100) / 100,
+          uniqueClickRate: Math.round(uniqueClickRate * 100) / 100
+        }
+      };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Get user stats error:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 }

@@ -9,6 +9,12 @@ import {
   AmazonTagResponse,
   ChannelResponse
 } from '../types';
+import {
+  sendSuccess,
+  sendValidationError,
+  sendNotFoundError,
+  sendInternalError
+} from '../utils/responseHelpers';
 
 export class UserController {
   constructor(private models: Models) {}
@@ -20,39 +26,34 @@ export class UserController {
     try {
       const user = req.user!;
 
-      res.status(200).json({
-        success: true,
-        data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            role: user.role,
-            isEmailVerified: user.isEmailVerified,
-            balance: user.balance,
-            // ⚠️ DEPRECATED - kept for backward compatibility
-            amazonAssociateTag: user.amazonAssociateTag,
-            websiteUrl: user.websiteUrl,
-            companyName: user.companyName,
-            // ✨ NEW v1.8.x - Multi-entity support
-            amazonTags: user.amazonTags || [],
-            channels: user.channels || [],
-            defaultAmazonTagId: user.defaultAmazonTagId,
-            defaultChannelId: user.defaultChannelId,
-            lastLoginAt: user.lastLoginAt,
-            createdAt: user.createdAt
-          }
-        },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          isEmailVerified: user.isEmailVerified,
+          balance: user.balance,
+          // ⚠️ DEPRECATED - kept for backward compatibility
+          amazonAssociateTag: user.amazonAssociateTag,
+          websiteUrl: user.websiteUrl,
+          companyName: user.companyName,
+          // ✨ NEW v1.8.x - Multi-entity support
+          amazonTags: user.amazonTags || [],
+          channels: user.channels || [],
+          defaultAmazonTagId: user.defaultAmazonTagId,
+          defaultChannelId: user.defaultChannelId,
+          lastLoginAt: user.lastLoginAt,
+          createdAt: user.createdAt
+        }
+      };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching user profile:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -74,19 +75,13 @@ export class UserController {
 
       // Validazione Amazon Associate Tag (backward compatibility)
       if (amazonAssociateTag && !/^[a-zA-Z0-9\-]{3,20}$/.test(amazonAssociateTag)) {
-        res.status(400).json({ 
-          error: 'Invalid Amazon Associate Tag format',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Invalid Amazon Associate Tag format');
         return;
       }
 
       // Validazione URL
       if (websiteUrl && !this.isValidUrl(websiteUrl)) {
-        res.status(400).json({ 
-          error: 'Invalid website URL format',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Invalid website URL format');
         return;
       }
 
@@ -94,10 +89,7 @@ export class UserController {
       if (defaultAmazonTagId) {
         const tag = await this.models.user.getAmazonTagById(user.id, defaultAmazonTagId);
         if (!tag) {
-          res.status(400).json({
-            error: 'Default Amazon tag not found',
-            timestamp: new Date().toISOString()
-          });
+          sendValidationError(res, 'Default Amazon tag not found');
           return;
         }
       }
@@ -105,10 +97,7 @@ export class UserController {
       if (defaultChannelId) {
         const channel = await this.models.user.getChannelById(user.id, defaultChannelId);
         if (!channel) {
-          res.status(400).json({
-            error: 'Default channel not found',
-            timestamp: new Date().toISOString()
-          });
+          sendValidationError(res, 'Default channel not found');
           return;
         }
       }
@@ -125,56 +114,46 @@ export class UserController {
       if (defaultChannelId !== undefined) updateData.defaultChannelId = defaultChannelId;
 
       if (Object.keys(updateData).length === 0) {
-        res.status(400).json({
-          error: 'No valid fields to update',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'No valid fields to update');
         return;
       }
 
       const updatedUser = await this.models.user.updateById(user.id, updateData);
 
       if (!updatedUser) {
-        res.status(404).json({
-          error: 'User not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'User');
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        data: {
-          user: {
-            id: updatedUser.id,
-            email: updatedUser.email,
-            name: updatedUser.name,
-            firstName: updatedUser.firstName,
-            lastName: updatedUser.lastName,
-            role: updatedUser.role,
-            isEmailVerified: updatedUser.isEmailVerified,
-            balance: updatedUser.balance,
-            amazonAssociateTag: updatedUser.amazonAssociateTag,
-            websiteUrl: updatedUser.websiteUrl,
-            companyName: updatedUser.companyName,
-            amazonTags: updatedUser.amazonTags || [],
-            channels: updatedUser.channels || [],
-            defaultAmazonTagId: updatedUser.defaultAmazonTagId,
-            defaultChannelId: updatedUser.defaultChannelId,
-            lastLoginAt: updatedUser.lastLoginAt,
-            createdAt: updatedUser.createdAt,
-            updatedAt: updatedUser.updatedAt
-          }
-        },
-        message: 'Profile updated successfully',
-        timestamp: new Date().toISOString()
+      const responseData = {
+        user: {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          name: updatedUser.name,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          role: updatedUser.role,
+          isEmailVerified: updatedUser.isEmailVerified,
+          balance: updatedUser.balance,
+          amazonAssociateTag: updatedUser.amazonAssociateTag,
+          websiteUrl: updatedUser.websiteUrl,
+          companyName: updatedUser.companyName,
+          amazonTags: updatedUser.amazonTags || [],
+          channels: updatedUser.channels || [],
+          defaultAmazonTagId: updatedUser.defaultAmazonTagId,
+          defaultChannelId: updatedUser.defaultChannelId,
+          lastLoginAt: updatedUser.lastLoginAt,
+          createdAt: updatedUser.createdAt,
+          updatedAt: updatedUser.updatedAt
+        }
+      };
+
+      sendSuccess(res, responseData, {
+        message: 'Profile updated successfully'
       });
     } catch (error) {
       console.error('Error updating user profile:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -185,45 +164,36 @@ export class UserController {
       const { name } = req.body;
 
       if (!name || name.trim().length === 0) {
-        res.status(400).json({
-          error: 'API key name is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'API key name is required');
         return;
       }
 
       // Controlla limite API keys (max 10 per utente)
       if (user.apiKeys.length >= 10) {
-        res.status(400).json({
-          error: 'Maximum number of API keys reached (10)',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Maximum number of API keys reached (10)');
         return;
       }
 
       // Genera nuova API key
       const apiKey = await this.models.user.generateApiKey(user.id, name.trim());
 
-      res.status(201).json({
-        success: true,
-        data: {
-          apiKey: {
-            id: apiKey.id,
-            name: apiKey.name,
-            key: `ak_${apiKey.keyHash}`, // Mostra la chiave solo una volta
-            isActive: apiKey.isActive,
-            createdAt: apiKey.createdAt
-          }
-        },
+      const responseData = {
+        apiKey: {
+          id: apiKey.id,
+          name: apiKey.name,
+          key: `ak_${apiKey.keyHash}`, // Mostra la chiave solo una volta
+          isActive: apiKey.isActive,
+          createdAt: apiKey.createdAt
+        }
+      };
+
+      sendSuccess(res, responseData, {
         message: 'API key created successfully. Save this key as it will not be shown again.',
-        timestamp: new Date().toISOString()
+        statusCode: 201
       });
     } catch (error) {
       console.error('Error creating API key:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -241,19 +211,14 @@ export class UserController {
         keyPreview: `ak_****${key.keyHash.slice(-4)}` // Mostra solo ultimi 4 caratteri
       }));
 
-      res.status(200).json({
-        success: true,
-        data: {
-          apiKeys
-        },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = {
+        apiKeys
+      };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching API keys:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -265,20 +230,14 @@ export class UserController {
       const { name, isActive } = req.body;
 
       if (!keyId) {
-        res.status(400).json({
-          error: 'Key ID is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Key ID is required');
         return;
       }
 
       // Trova l'API key
       const apiKeyIndex = user.apiKeys.findIndex(key => key.id === keyId);
       if (apiKeyIndex === -1) {
-        res.status(404).json({
-          error: 'API key not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'API key');
         return;
       }
 
@@ -288,46 +247,36 @@ export class UserController {
       if (isActive !== undefined) updateData[`apiKeys.${apiKeyIndex}.isActive`] = isActive;
 
       if (Object.keys(updateData).length === 0) {
-        res.status(400).json({
-          error: 'No valid fields to update',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'No valid fields to update');
         return;
       }
 
       const updatedUser = await this.models.user.updateById(user.id, updateData);
 
       if (!updatedUser) {
-        res.status(404).json({
-          error: 'Failed to update API key',
-          timestamp: new Date().toISOString()
-        });
+        sendInternalError(res, 'Failed to update API key');
         return;
       }
 
       const updatedApiKey = updatedUser.apiKeys.find(key => key.id === keyId)!;
 
-      res.status(200).json({
-        success: true,
-        data: {
-          apiKey: {
-            id: updatedApiKey.id,
-            name: updatedApiKey.name,
-            isActive: updatedApiKey.isActive,
-            lastUsedAt: updatedApiKey.lastUsedAt,
-            createdAt: updatedApiKey.createdAt,
-            keyPreview: `ak_****${updatedApiKey.keyHash.slice(-4)}`
-          }
-        },
-        message: 'API key updated successfully',
-        timestamp: new Date().toISOString()
+      const responseData = {
+        apiKey: {
+          id: updatedApiKey.id,
+          name: updatedApiKey.name,
+          isActive: updatedApiKey.isActive,
+          lastUsedAt: updatedApiKey.lastUsedAt,
+          createdAt: updatedApiKey.createdAt,
+          keyPreview: `ak_****${updatedApiKey.keyHash.slice(-4)}`
+        }
+      };
+
+      sendSuccess(res, responseData, {
+        message: 'API key updated successfully'
       });
     } catch (error) {
       console.error('Error updating API key:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -338,44 +287,30 @@ export class UserController {
       const { keyId } = req.params;
 
       if (!keyId) {
-        res.status(400).json({
-          error: 'Key ID is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Key ID is required');
         return;
       }
 
       // Verifica che l'API key esista
       const apiKeyExists = user.apiKeys.some(key => key.id === keyId);
       if (!apiKeyExists) {
-        res.status(404).json({
-          error: 'API key not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'API key');
         return;
       }
 
       const deleted = await this.models.user.deleteApiKey(user.id, keyId);
 
       if (!deleted) {
-        res.status(500).json({
-          error: 'Failed to delete API key',
-          timestamp: new Date().toISOString()
-        });
+        sendInternalError(res, 'Failed to delete API key');
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        message: 'API key deleted successfully',
-        timestamp: new Date().toISOString()
+      sendSuccess(res, null, {
+        message: 'API key deleted successfully'
       });
     } catch (error) {
       console.error('Error deleting API key:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -408,19 +343,16 @@ export class UserController {
         totalRevenue: amazonTag.totalRevenue
       };
 
-      res.status(201).json({
-        success: true,
-        data: { amazonTag: response },
+      const responseData = { amazonTag: response };
+
+      sendSuccess(res, responseData, {
         message: 'Amazon tag created successfully',
-        timestamp: new Date().toISOString()
+        statusCode: 201
       });
     } catch (error) {
       console.error('Error creating Amazon tag:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to create Amazon tag';
-      res.status(400).json({
-        error: errorMessage,
-        timestamp: new Date().toISOString()
-      });
+      sendValidationError(res, errorMessage);
     }
   };
 
@@ -449,17 +381,12 @@ export class UserController {
         totalRevenue: tag.totalRevenue
       }));
 
-      res.status(200).json({
-        success: true,
-        data: { amazonTags: response },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { amazonTags: response };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching Amazon tags:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -470,20 +397,14 @@ export class UserController {
       const { tagId } = req.params;
 
       if (!tagId) {
-        res.status(400).json({
-          error: 'Tag ID is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Tag ID is required');
         return;
       }
 
       const amazonTag = await this.models.user.getAmazonTagById(user.id, tagId);
 
       if (!amazonTag) {
-        res.status(404).json({
-          error: 'Amazon tag not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Amazon tag');
         return;
       }
 
@@ -506,17 +427,12 @@ export class UserController {
         totalRevenue: amazonTag.totalRevenue
       };
 
-      res.status(200).json({
-        success: true,
-        data: { amazonTag: response },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { amazonTag: response };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching Amazon tag:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -528,20 +444,14 @@ export class UserController {
       const updates: UpdateAmazonTagRequest = req.body;
 
       if (!tagId) {
-        res.status(400).json({
-          error: 'Tag ID is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Tag ID is required');
         return;
       }
 
       const updatedTag = await this.models.user.updateAmazonTag(user.id, tagId, updates);
 
       if (!updatedTag) {
-        res.status(404).json({
-          error: 'Amazon tag not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Amazon tag');
         return;
       }
 
@@ -564,19 +474,15 @@ export class UserController {
         totalRevenue: updatedTag.totalRevenue
       };
 
-      res.status(200).json({
-        success: true,
-        data: { amazonTag: response },
-        message: 'Amazon tag updated successfully',
-        timestamp: new Date().toISOString()
+      const responseData = { amazonTag: response };
+
+      sendSuccess(res, responseData, {
+        message: 'Amazon tag updated successfully'
       });
     } catch (error) {
       console.error('Error updating Amazon tag:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to update Amazon tag';
-      res.status(400).json({
-        error: errorMessage,
-        timestamp: new Date().toISOString()
-      });
+      sendValidationError(res, errorMessage);
     }
   };
 
@@ -587,34 +493,23 @@ export class UserController {
       const { tagId } = req.params;
 
       if (!tagId) {
-        res.status(400).json({
-          error: 'Tag ID is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Tag ID is required');
         return;
       }
 
       const deleted = await this.models.user.deleteAmazonTag(user.id, tagId);
 
       if (!deleted) {
-        res.status(404).json({
-          error: 'Amazon tag not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Amazon tag');
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        message: 'Amazon tag deleted successfully',
-        timestamp: new Date().toISOString()
+      sendSuccess(res, null, {
+        message: 'Amazon tag deleted successfully'
       });
     } catch (error) {
       console.error('Error deleting Amazon tag:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -653,19 +548,16 @@ export class UserController {
         defaultAmazonTagId: formatOptionalString(channel.defaultAmazonTagId)
       };
 
-      res.status(201).json({
-        success: true,
-        data: { channel: response },
+      const responseData = { channel: response };
+
+      sendSuccess(res, responseData, {
         message: 'Channel created successfully',
-        timestamp: new Date().toISOString()
+        statusCode: 201
       });
     } catch (error) {
       console.error('Error creating channel:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to create channel';
-      res.status(400).json({
-        error: errorMessage,
-        timestamp: new Date().toISOString()
-      });
+      sendValidationError(res, errorMessage);
     }
   };
 
@@ -700,17 +592,12 @@ export class UserController {
         defaultAmazonTagId: formatOptionalString(channel.defaultAmazonTagId)
       }));
 
-      res.status(200).json({
-        success: true,
-        data: { channels: response },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { channels: response };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching channels:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -721,20 +608,14 @@ export class UserController {
       const { channelId } = req.params;
 
       if (!channelId) {
-        res.status(400).json({
-          error: 'Channel ID is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Channel ID is required');
         return;
       }
 
       const channel = await this.models.user.getChannelById(user.id, channelId);
 
       if (!channel) {
-        res.status(404).json({
-          error: 'Channel not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Channel');
         return;
       }
 
@@ -763,17 +644,12 @@ export class UserController {
         defaultAmazonTagId: formatOptionalString(channel.defaultAmazonTagId)
       };
 
-      res.status(200).json({
-        success: true,
-        data: { channel: response },
-        timestamp: new Date().toISOString()
-      });
+      const responseData = { channel: response };
+
+      sendSuccess(res, responseData);
     } catch (error) {
       console.error('Error fetching channel:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
@@ -785,20 +661,14 @@ export class UserController {
       const updates: UpdateChannelRequest = req.body;
 
       if (!channelId) {
-        res.status(400).json({
-          error: 'Channel ID is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Channel ID is required');
         return;
       }
 
       const updatedChannel = await this.models.user.updateChannel(user.id, channelId, updates);
 
       if (!updatedChannel) {
-        res.status(404).json({
-          error: 'Channel not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Channel');
         return;
       }
 
@@ -827,19 +697,15 @@ export class UserController {
         defaultAmazonTagId: formatOptionalString(updatedChannel.defaultAmazonTagId)
       };
 
-      res.status(200).json({
-        success: true,
-        data: { channel: response },
-        message: 'Channel updated successfully',
-        timestamp: new Date().toISOString()
+      const responseData = { channel: response };
+
+      sendSuccess(res, responseData, {
+        message: 'Channel updated successfully'
       });
     } catch (error) {
       console.error('Error updating channel:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to update channel';
-      res.status(400).json({
-        error: errorMessage,
-        timestamp: new Date().toISOString()
-      });
+      sendValidationError(res, errorMessage);
     }
   };
 
@@ -850,34 +716,23 @@ export class UserController {
       const { channelId } = req.params;
 
       if (!channelId) {
-        res.status(400).json({
-          error: 'Channel ID is required',
-          timestamp: new Date().toISOString()
-        });
+        sendValidationError(res, 'Channel ID is required');
         return;
       }
 
       const deleted = await this.models.user.deleteChannel(user.id, channelId);
 
       if (!deleted) {
-        res.status(404).json({
-          error: 'Channel not found',
-          timestamp: new Date().toISOString()
-        });
+        sendNotFoundError(res, 'Channel');
         return;
       }
 
-      res.status(200).json({
-        success: true,
-        message: 'Channel deleted successfully',
-        timestamp: new Date().toISOString()
+      sendSuccess(res, null, {
+        message: 'Channel deleted successfully'
       });
     } catch (error) {
       console.error('Error deleting channel:', error);
-      res.status(500).json({
-        error: 'Internal server error',
-        timestamp: new Date().toISOString()
-      });
+      sendInternalError(res);
     }
   };
 
