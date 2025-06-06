@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { ObjectId } from 'mongodb';
+import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
   sendSuccess,
   sendValidationError,
@@ -12,11 +13,19 @@ import {
   createPagination
 } from '../utils/responseHelpers';
 
+// ===== 🚀 NEW v1.8.4: STRUCTURED LOGGING WITH PINO =====
+// Create module-specific logger for conversion operations
+const conversionLogger = createModuleLogger('conversion');
+
 export class ConversionController {
-  constructor(private models: Models) {}
+  constructor(private models: Models) {
+    conversionLogger.debug('ConversionController initialized');
+  }
 
   // GET /api/user/conversions
   getUserConversions = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const {
@@ -26,6 +35,15 @@ export class ConversionController {
         limit = '50',
         offset = '0'
       } = req.query;
+
+      conversionLogger.debug({ 
+        userId: user.id, 
+        status, 
+        sortBy, 
+        sortOrder, 
+        limit, 
+        offset 
+      }, 'User conversions request started');
 
       const filters = {
         status: status as 'pending' | 'approved' | 'rejected' | undefined,
@@ -71,15 +89,27 @@ export class ConversionController {
 
       const pagination = createPagination(filters.limit, filters.offset, conversionsWithLinkData.length);
 
+      // Log successful conversion retrieval
+      conversionLogger.info({ 
+        userId: user.id, 
+        conversionCount: conversionsWithLinkData.length, 
+        filters 
+      }, 'User conversions retrieved successfully');
+      logUtils.performance.requestEnd('GET', '/api/user/conversions', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData, { pagination });
     } catch (error) {
-      console.error('Error fetching user conversions:', error);
+      const duration = Date.now() - startTime;
+      conversionLogger.error({ error, duration }, 'Error fetching user conversions');
+      logUtils.performance.requestEnd('GET', '/api/user/conversions', duration, 500);
       sendInternalError(res);
     }
   };
 
   // POST /track/conversion - Public endpoint per postback/pixel
   trackConversion = async (req: Request, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const {
         trackingId,
@@ -89,8 +119,17 @@ export class ConversionController {
         notes
       } = req.body;
 
+      conversionLogger.debug({ 
+        trackingId, 
+        payoutAmount, 
+        advertiserRevenue, 
+        orderId,
+        ip: req.ip 
+      }, 'Conversion tracking request started');
+
       // Validazione parametri obbligatori
       if (!trackingId || payoutAmount === undefined) {
+        conversionLogger.warn({ trackingId, payoutAmount }, 'Conversion tracking failed: missing required fields');
         sendValidationError(res, 'trackingId and payoutAmount are required');
         return;
       }
@@ -99,6 +138,7 @@ export class ConversionController {
       const click = await this.models.click.findByTrackingId(trackingId);
 
       if (!click) {
+        conversionLogger.warn({ trackingId }, 'Conversion tracking failed: click not found');
         sendNotFoundError(res, 'Click not found for the provided trackingId');
         return;
       }
@@ -107,6 +147,10 @@ export class ConversionController {
       const link = await this.models.affiliateLink.findByHash(click.linkHash);
       
       if (!link) {
+        conversionLogger.warn({ 
+          trackingId, 
+          linkHash: click.linkHash 
+        }, 'Conversion tracking failed: link not found');
         sendNotFoundError(res, 'Link');
         return;
       }
@@ -115,6 +159,11 @@ export class ConversionController {
       const existingConversion = await this.models.conversion.findByTrackingId(trackingId);
       
       if (existingConversion) {
+        conversionLogger.warn({ 
+          trackingId, 
+          existingConversionId: existingConversion._id 
+        }, 'Conversion tracking failed: duplicate conversion');
+        logUtils.conversions.duplicate(trackingId, existingConversion._id!.toString());
         sendConflictError(res, 'Conversion already exists for this trackingId');
         return;
       }
@@ -147,33 +196,68 @@ export class ConversionController {
         status: conversion.status
       };
 
+      // Log successful conversion tracking
+      logUtils.conversions.tracked(
+        link.userId, 
+        link._id!.toString(), 
+        trackingId, 
+        conversionData.payoutAmount
+      );
+      logUtils.performance.requestEnd('POST', '/track/conversion', Date.now() - startTime, 201);
+
       sendSuccess(res, responseData, {
         message: 'Conversion tracked successfully',
         statusCode: 201
       });
     } catch (error) {
-      console.error('Error tracking conversion:', error);
+      const duration = Date.now() - startTime;
+      conversionLogger.error({ error, duration }, 'Error tracking conversion');
+      logUtils.performance.requestEnd('POST', '/track/conversion', duration, 500);
       sendInternalError(res);
     }
   };
 
   // PATCH /api/user/conversions/:conversionId - Aggiorna stato conversione (admin only future)
   updateConversionStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { conversionId } = req.params;
       const { status, notes } = req.body;
 
+      conversionLogger.debug({ 
+        userId: user.id, 
+        conversionId, 
+        newStatus: status, 
+        adminRole: user.role 
+      }, 'Conversion status update request started');
+
       // Solo admin possono modificare lo stato delle conversioni
       if (user.role !== 'admin') {
+        conversionLogger.warn({ 
+          userId: user.id, 
+          role: user.role, 
+          conversionId 
+        }, 'Conversion status update denied: insufficient permissions');
         sendForbiddenError(res, 'Access denied. Admin role required.');
         return;
       }
 
       if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
+        conversionLogger.warn({ 
+          userId: user.id, 
+          conversionId, 
+          invalidStatus: status 
+        }, 'Conversion status update failed: invalid status');
         sendValidationError(res, 'Valid status is required (pending, approved, rejected)');
         return;
       }
+
+      // Get current conversion for logging (we'll skip this for now since we need more context)
+      // const currentConversion = await this.models.conversion.findByConversionId(conversionId);
+      // For now, we'll just log the update without the old status
+      const oldStatus = 'unknown';
 
       const updated = await this.models.conversion.updateStatus(
         new ObjectId(conversionId),
@@ -182,31 +266,58 @@ export class ConversionController {
       );
 
       if (!updated) {
+        conversionLogger.warn({ 
+          userId: user.id, 
+          conversionId 
+        }, 'Conversion status update failed: conversion not found');
         sendNotFoundError(res, 'Conversion');
         return;
       }
+
+      // Log successful status update  
+      if (conversionId) {
+        logUtils.conversions.updated(conversionId, 'unknown', status, user.id);
+      }
+      logUtils.performance.requestEnd('PATCH', `/api/user/conversions/${conversionId}`, Date.now() - startTime, 200);
 
       sendSuccess(res, null, {
         message: 'Conversion status updated successfully'
       });
     } catch (error) {
-      console.error('Error updating conversion status:', error);
+      const duration = Date.now() - startTime;
+      conversionLogger.error({ error, duration }, 'Error updating conversion status');
+      logUtils.performance.requestEnd('PATCH', `/api/user/conversions/:conversionId`, duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/conversions/stats - Statistiche conversioni per widget dashboard
   getConversionStats = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
+
+      conversionLogger.debug({ userId: user.id }, 'Conversion stats request started');
 
       const stats = await this.models.conversion.getUserConversionStats(user.id);
 
       const responseData = { stats };
 
+      // Log successful stats retrieval
+      logUtils.conversions.revenueCalculated(
+        user.id, 
+        'current', 
+        stats.totalRevenue, 
+        stats.approvedConversions
+      );
+      logUtils.performance.requestEnd('GET', '/api/user/conversions/stats', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching conversion stats:', error);
+      const duration = Date.now() - startTime;
+      conversionLogger.error({ error, duration }, 'Error fetching conversion stats');
+      logUtils.performance.requestEnd('GET', '/api/user/conversions/stats', duration, 500);
       sendInternalError(res);
     }
   };

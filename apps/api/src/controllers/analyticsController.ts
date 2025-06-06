@@ -2,19 +2,34 @@ import { Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { AnalyticsSummary, TrendDataPoint, DistributionDataPoint } from '../types';
+import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
   sendSuccess,
   sendInternalError
 } from '../utils/responseHelpers';
 
+// ===== 🚀 NEW v1.8.4: STRUCTURED LOGGING WITH PINO =====
+// Create module-specific logger for analytics operations
+const analyticsLogger = createModuleLogger('analytics');
+
 export class AnalyticsController {
-  constructor(private models: Models) {}
+  constructor(private models: Models) {
+    analyticsLogger.debug('AnalyticsController initialized');
+  }
 
   // GET /api/user/analytics/summary
   getSummary = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { startDate, endDate } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        startDate, 
+        endDate 
+      }, 'Analytics summary request started');
 
       // Default: ultimo mese
       const end = endDate ? new Date(endDate as string) : new Date();
@@ -51,15 +66,23 @@ export class AnalyticsController {
 
       const responseData = { summary };
 
+      // Log successful analytics calculation
+      logUtils.analytics.summaryGenerated(user.id, summary.totalLinks, summary.totalClicks, summary.totalRevenue);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/summary', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching analytics summary:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching analytics summary');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/summary', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/clicks-trend
   getClicksTrend = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { 
@@ -68,21 +91,36 @@ export class AnalyticsController {
         linkId,
         subId 
       } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        period, 
+        granularity, 
+        linkId, 
+        subId 
+      }, 'Clicks trend request started');
 
       const days = this.parsePeriod(period as string);
       const trend = await this.models.click.getClicksTrend(user.id, days);
 
       const responseData = { trend };
 
+      logUtils.analytics.trendGenerated(user.id, 'clicks', period as string, trend.length);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/clicks-trend', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching clicks trend:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching clicks trend');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/clicks-trend', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/revenue-trend
   getRevenueTrend = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { 
@@ -91,6 +129,14 @@ export class AnalyticsController {
         linkId,
         subId 
       } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        period, 
+        granularity, 
+        linkId, 
+        subId 
+      }, 'Revenue trend request started');
 
       const days = this.parsePeriod(period as string);
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -105,53 +151,93 @@ export class AnalyticsController {
 
       const responseData = { trend };
 
+      logUtils.analytics.trendGenerated(user.id, 'revenue', period as string, trend.length);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/revenue-trend', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching revenue trend:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching revenue trend');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/revenue-trend', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/distribution/geo
   getGeoDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { startDate, endDate, linkId, subId, groupBy = 'country' } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        startDate, 
+        endDate, 
+        linkId, 
+        subId, 
+        groupBy 
+      }, 'Geo distribution request started');
 
       const distribution = await this.models.click.getGeoDistribution(user.id);
 
       const responseData = { distribution };
 
+      logUtils.analytics.distributionGenerated(user.id, 'geo', distribution.length);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/geo', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching geo distribution:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching geo distribution');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/geo', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/distribution/device
   getDeviceDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { startDate, endDate, linkId, subId } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        startDate, 
+        endDate, 
+        linkId, 
+        subId 
+      }, 'Device distribution request started');
 
       const distribution = await this.models.click.getDeviceDistribution(user.id);
 
       const responseData = { distribution };
 
+      logUtils.analytics.distributionGenerated(user.id, 'device', distribution.length);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/device', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching device distribution:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching device distribution');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/device', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/distribution/browser
   getBrowserDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
-      // Per ora restituiamo dati mock, implementeremo la logica nel click model più avanti
       
+      analyticsLogger.debug({ userId: user.id }, 'Browser distribution request started (mock data)');
+      
+      // Per ora restituiamo dati mock, implementeremo la logica nel click model più avanti
       const distribution = [
         { label: 'Chrome', value: 45, percentage: 65.2 },
         { label: 'Safari', value: 15, percentage: 21.7 },
@@ -161,19 +247,28 @@ export class AnalyticsController {
 
       const responseData = { distribution };
 
+      logUtils.analytics.distributionGenerated(user.id, 'browser', distribution.length);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/browser', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching browser distribution:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching browser distribution');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/browser', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/distribution/referer
   getRefererDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
-      // Per ora restituiamo dati mock
       
+      analyticsLogger.debug({ userId: user.id }, 'Referer distribution request started (mock data)');
+      
+      // Per ora restituiamo dati mock
       const distribution = [
         { label: 'Telegram', value: 35, percentage: 42.2 },
         { label: 'Instagram', value: 20, percentage: 24.1 },
@@ -184,19 +279,28 @@ export class AnalyticsController {
 
       const responseData = { distribution };
 
+      logUtils.analytics.distributionGenerated(user.id, 'referer', distribution.length);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/referer', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching referer distribution:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching referer distribution');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/referer', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/distribution/subid
   getSubIdDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
-      // Per ora restituiamo dati mock
       
+      analyticsLogger.debug({ userId: user.id }, 'SubID distribution request started (mock data)');
+      
+      // Per ora restituiamo dati mock
       const distribution = [
         { label: 'telegram_channel_main', value: 25, percentage: 35.7 },
         { label: 'instagram_story', value: 18, percentage: 25.7 },
@@ -207,18 +311,32 @@ export class AnalyticsController {
 
       const responseData = { distribution };
 
+      logUtils.analytics.distributionGenerated(user.id, 'subid', distribution.length);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/subid', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching subid distribution:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching subid distribution');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/distribution/subid', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/hourly-heatmap
   getHourlyHeatmap = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { period = '7d', startDate, endDate } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        period, 
+        startDate, 
+        endDate 
+      }, 'Hourly heatmap request started');
 
       // Calculate date range
       let dateFilter: Date;
@@ -287,16 +405,23 @@ export class AnalyticsController {
         }
       };
 
+      logUtils.analytics.heatmapGenerated(user.id, totalClicks, peakHour, peakDay);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/hourly-heatmap', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
 
     } catch (error) {
-      console.error('Error fetching hourly heatmap:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching hourly heatmap');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/hourly-heatmap', duration, 500);
       sendInternalError(res);
     }
   };
 
   // GET /api/user/analytics/top-performing-links
   getTopPerformingLinks = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { 
@@ -305,6 +430,14 @@ export class AnalyticsController {
         startDate,
         endDate 
       } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        sortBy, 
+        limit, 
+        startDate, 
+        endDate 
+      }, 'Top performing links request started');
 
       const links = await this.models.affiliateLink.getTopPerformingLinks(
         user.id,
@@ -337,9 +470,14 @@ export class AnalyticsController {
 
       const responseData = { topLinks: linksWithMetrics };
 
+      logUtils.analytics.topLinksGenerated(user.id, sortBy as string, linksWithMetrics.length);
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/top-performing-links', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Error fetching top performing links:', error);
+      const duration = Date.now() - startTime;
+      analyticsLogger.error({ error, duration }, 'Error fetching top performing links');
+      logUtils.performance.requestEnd('GET', '/api/user/analytics/top-performing-links', duration, 500);
       sendInternalError(res);
     }
   };

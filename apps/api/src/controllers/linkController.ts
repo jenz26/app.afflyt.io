@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { AffiliateLink } from '../types';
+import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
   sendSuccess,
   sendValidationError,
@@ -11,17 +12,32 @@ import {
   createPagination
 } from '../utils/responseHelpers';
 
+// ===== 🚀 NEW v1.8.4: STRUCTURED LOGGING WITH PINO =====
+// Create module-specific logger for link operations
+const linkLogger = createModuleLogger('link');
+
 export class LinkController {
-  constructor(private models: Models) {}
+  constructor(private models: Models) {
+    linkLogger.debug('LinkController initialized');
+  }
 
   // Create new affiliate link
   create = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const { originalUrl, tag } = req.body;
       const user = req.user!;
 
+      linkLogger.debug({ 
+        userId: user.id, 
+        originalUrl, 
+        tag 
+      }, 'Link creation request started');
+
       // Validation
       if (!originalUrl) {
+        linkLogger.warn({ userId: user.id }, 'Link creation failed: missing originalUrl');
         sendValidationError(res, 'Original URL is required');
         return;
       }
@@ -30,6 +46,10 @@ export class LinkController {
       try {
         new URL(originalUrl);
       } catch {
+        linkLogger.warn({ 
+          userId: user.id, 
+          originalUrl 
+        }, 'Link creation failed: invalid URL format');
         sendValidationError(res, 'Invalid URL format');
         return;
       }
@@ -59,24 +79,38 @@ export class LinkController {
         }
       };
 
+      // Log successful link creation
+      logUtils.links.created(user.id, affiliateLink.hash, originalUrl, tag);
+      logUtils.performance.requestEnd('POST', '/api/links', Date.now() - startTime, 201);
+
       sendSuccess(res, linkResponse, {
         message: 'Affiliate link created successfully',
         statusCode: 201
       });
     } catch (error) {
-      console.error('Create link error:', error);
+      const duration = Date.now() - startTime;
+      linkLogger.error({ error, duration }, 'Error creating affiliate link');
+      logUtils.performance.requestEnd('POST', '/api/links', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Get user's affiliate links
   getLinks = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { limit = '50', offset = '0' } = req.query;
 
       const limitNum = parseInt(limit as string);
       const offsetNum = parseInt(offset as string);
+
+      linkLogger.debug({ 
+        userId: user.id, 
+        limit: limitNum, 
+        offset: offsetNum 
+      }, 'User links request started');
 
       const links = await this.models.affiliateLink.findByUserId(
         user.id,
@@ -104,20 +138,38 @@ export class LinkController {
 
       const pagination = createPagination(limitNum, offsetNum, linksWithShortUrls.length);
 
+      // Log successful links retrieval
+      linkLogger.info({ 
+        userId: user.id, 
+        linkCount: linksWithShortUrls.length,
+        pagination: { limit: limitNum, offset: offsetNum }
+      }, 'User links retrieved successfully');
+      logUtils.performance.requestEnd('GET', '/api/links', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData, { pagination });
     } catch (error) {
-      console.error('Get links error:', error);
+      const duration = Date.now() - startTime;
+      linkLogger.error({ error, duration }, 'Error fetching user links');
+      logUtils.performance.requestEnd('GET', '/api/links', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Get link details by hash
   getLinkByHash = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const { hash } = req.params;
       const user = req.user!;
 
+      linkLogger.debug({ 
+        userId: user.id, 
+        linkHash: hash 
+      }, 'Link details request started');
+
       if (!hash) {
+        linkLogger.warn({ userId: user.id }, 'Link details request failed: missing hash parameter');
         sendValidationError(res, 'Hash parameter is required');
         return;
       }
@@ -125,12 +177,21 @@ export class LinkController {
       const link = await this.models.affiliateLink.findByHash(hash);
 
       if (!link) {
+        linkLogger.warn({ 
+          userId: user.id, 
+          linkHash: hash 
+        }, 'Link details request failed: link not found');
         sendNotFoundError(res, 'Link');
         return;
       }
 
       // Check if user owns this link
       if (link.userId !== user.id) {
+        linkLogger.warn({ 
+          userId: user.id, 
+          linkHash: hash, 
+          linkOwnerId: link.userId 
+        }, 'Link details request denied: insufficient permissions');
         sendForbiddenError(res);
         return;
       }
@@ -151,19 +212,39 @@ export class LinkController {
         }
       };
 
+      // Log successful link details retrieval
+      linkLogger.info({ 
+        userId: user.id, 
+        linkHash: hash,
+        clickCount: link.clickCount,
+        totalRevenue: link.totalRevenue
+      }, 'Link details retrieved successfully');
+      logUtils.performance.requestEnd('GET', `/api/links/${hash}`, Date.now() - startTime, 200);
+
       sendSuccess(res, linkResponse);
     } catch (error) {
-      console.error('Get link by hash error:', error);
+      const duration = Date.now() - startTime;
+      linkLogger.error({ error, duration }, 'Error fetching link details');
+      logUtils.performance.requestEnd('GET', '/api/links/:hash', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Handle redirect (public endpoint)
   redirect = async (req: Request, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const { hash } = req.params;
 
+      linkLogger.debug({ 
+        linkHash: hash,
+        ip: req.ip,
+        userAgent: req.headers['user-agent']
+      }, 'Link redirect request started');
+
       if (!hash) {
+        linkLogger.warn({ ip: req.ip }, 'Redirect failed: missing hash parameter');
         sendValidationError(res, 'Hash parameter is required');
         return;
       }
@@ -172,6 +253,12 @@ export class LinkController {
       const link = await this.models.affiliateLink.findByHash(hash);
 
       if (!link || !link.isActive) {
+        linkLogger.warn({ 
+          linkHash: hash,
+          ip: req.ip,
+          linkExists: !!link,
+          isActive: link?.isActive 
+        }, 'Redirect failed: link not found or inactive');
         sendNotFoundError(res, 'Link not found or inactive');
         return;
       }
@@ -205,23 +292,39 @@ export class LinkController {
 
       await this.models.affiliateLink.updateStats(hash, updateData);
 
+      // Log successful click and redirect
+      logUtils.links.clicked(hash, link.userId, ipAddress, click.isUnique);
+      logUtils.links.redirected(hash, link.originalUrl, Date.now() - startTime);
+      logUtils.performance.requestEnd('GET', `/r/${hash}`, Date.now() - startTime, 302);
+
       // Redirect to original URL
       res.redirect(302, link.originalUrl);
     } catch (error) {
-      console.error('Redirect error:', error);
+      const duration = Date.now() - startTime;
+      linkLogger.error({ error, duration }, 'Error processing redirect');
+      logUtils.performance.requestEnd('GET', '/r/:hash', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Get recent links for dashboard
   getRecentLinks = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { limit = '10' } = req.query;
 
+      const limitNum = parseInt(limit as string);
+
+      linkLogger.debug({ 
+        userId: user.id, 
+        limit: limitNum 
+      }, 'Recent links request started');
+
       const links = await this.models.affiliateLink.getRecentLinks(
         user.id,
-        parseInt(limit as string)
+        limitNum
       );
 
       const linksWithShortUrls = links.map(link => ({
@@ -240,22 +343,40 @@ export class LinkController {
         recentLinks: linksWithShortUrls
       };
 
+      // Log successful recent links retrieval
+      linkLogger.info({ 
+        userId: user.id, 
+        recentLinkCount: linksWithShortUrls.length 
+      }, 'Recent links retrieved successfully');
+      logUtils.performance.requestEnd('GET', '/api/links/recent', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Get recent links error:', error);
+      const duration = Date.now() - startTime;
+      linkLogger.error({ error, duration }, 'Error fetching recent links');
+      logUtils.performance.requestEnd('GET', '/api/links/recent', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Get top performing links
   getTopPerformingLinks = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
       const { limit = '10' } = req.query;
 
+      const limitNum = parseInt(limit as string);
+
+      linkLogger.debug({ 
+        userId: user.id, 
+        limit: limitNum 
+      }, 'Top performing links request started');
+
       const links = await this.models.affiliateLink.getTopPerformingLinks(
         user.id,
-        parseInt(limit as string)
+        limitNum
       );
 
       const linksWithShortUrls = links.map(link => ({
@@ -277,17 +398,30 @@ export class LinkController {
         topLinks: linksWithShortUrls
       };
 
+      // Log successful top links retrieval with performance insights
+      const totalRevenue = linksWithShortUrls.reduce((sum, link) => sum + link.totalRevenue, 0);
+      const totalClicks = linksWithShortUrls.reduce((sum, link) => sum + link.clickCount, 0);
+      
+      logUtils.links.performanceAnalyzed(user.id, linksWithShortUrls.length, totalRevenue / totalClicks || 0);
+      logUtils.performance.requestEnd('GET', '/api/links/top-performing', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Get top performing links error:', error);
+      const duration = Date.now() - startTime;
+      linkLogger.error({ error, duration }, 'Error fetching top performing links');
+      logUtils.performance.requestEnd('GET', '/api/links/top-performing', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Get user statistics
   getUserStats = async (req: AuthRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const user = req.user!;
+
+      linkLogger.debug({ userId: user.id }, 'User stats request started');
 
       const stats = await this.models.affiliateLink.getUserStats(user.id);
 
@@ -305,9 +439,20 @@ export class LinkController {
         }
       };
 
+      // Log successful stats retrieval with key metrics
+      logUtils.links.statsUpdated(
+        'user_aggregate', 
+        stats.totalClicks, 
+        stats.totalUniqueClicks, 
+        stats.totalRevenue
+      );
+      logUtils.performance.requestEnd('GET', '/api/links/stats', Date.now() - startTime, 200);
+
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Get user stats error:', error);
+      const duration = Date.now() - startTime;
+      linkLogger.error({ error, duration }, 'Error fetching user stats');
+      logUtils.performance.requestEnd('GET', '/api/links/stats', duration, 500);
       sendInternalError(res);
     }
   };
