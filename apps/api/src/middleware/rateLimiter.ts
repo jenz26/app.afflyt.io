@@ -77,7 +77,53 @@ export class RateLimiter {
   }
 }
 
-// Predefined rate limiters
+// ===== 🚀 NEW v1.8.1: CONDITIONAL RATE LIMITING =====
+
+/**
+ * Centralized rate limiting control based on environment variables
+ * 
+ * @param limiter - The RateLimiter instance to conditionally apply
+ * @param options - Optional configuration for conditional behavior
+ * @returns Express middleware that applies rate limiting only when enabled
+ * 
+ * Environment Variables:
+ * - DISABLE_RATE_LIMIT: if 'true', disables all rate limiting
+ * - NODE_ENV: if 'development', logs rate limiting status
+ */
+export const conditionalRateLimit = (
+  limiter: RateLimiter, 
+  options: { 
+    name?: string, 
+    force?: boolean 
+  } = {}
+) => {
+  const isDisabled = process.env.DISABLE_RATE_LIMIT === 'true';
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const limiterName = options.name || 'Unknown';
+  const forceEnable = options.force === true;
+
+  // Log rate limiting status in development
+  if (isDevelopment) {
+    const status = (isDisabled && !forceEnable) ? '❌ DISABLED' : '✅ ENABLED';
+    console.log(`🛡️  Rate Limiter [${limiterName}]: ${status}`);
+  }
+
+  // Return pass-through middleware if disabled (unless forced)
+  if (isDisabled && !forceEnable) {
+    return (req: Request, res: Response, next: NextFunction): void => {
+      // Add headers to indicate rate limiting is disabled
+      res.setHeader('X-RateLimit-Status', 'disabled');
+      res.setHeader('X-RateLimit-Disabled-Reason', 'DISABLE_RATE_LIMIT=true');
+      next();
+    };
+  }
+
+  // Return the actual rate limiting middleware
+  return limiter.middleware();
+};
+
+// ===== PREDEFINED RATE LIMITERS (Updated) =====
+
 export const createGeneralLimiter = (): RateLimiter => {
   return new RateLimiter({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutes
@@ -104,4 +150,46 @@ export const createAuthLimiter = (): RateLimiter => {
     maxRequests: 5, // 5 login attempts per 15 minutes
     keyGenerator: (req: Request) => `auth:${req.ip || 'unknown'}`
   });
+};
+
+// ===== 🚀 NEW v1.8.1: CONDITIONAL LIMITER FACTORIES =====
+
+/**
+ * Creates a conditional general rate limiter
+ * Usage: const limiter = createConditionalGeneralLimiter();
+ *        router.use(limiter);
+ */
+export const createConditionalGeneralLimiter = () => {
+  const limiter = createGeneralLimiter();
+  return conditionalRateLimit(limiter, { name: 'General' });
+};
+
+/**
+ * Creates a conditional API rate limiter
+ * Usage: const limiter = createConditionalAPILimiter();
+ *        router.post('/api', limiter, controller.method);
+ */
+export const createConditionalAPILimiter = () => {
+  const limiter = createAPILimiter();
+  return conditionalRateLimit(limiter, { name: 'API' });
+};
+
+/**
+ * Creates a conditional auth rate limiter
+ * Usage: const limiter = createConditionalAuthLimiter();
+ *        router.post('/login', limiter, controller.login);
+ */
+export const createConditionalAuthLimiter = () => {
+  const limiter = createAuthLimiter();
+  return conditionalRateLimit(limiter, { name: 'Auth' });
+};
+
+/**
+ * Creates a conditional limiter that's always enabled (ignores DISABLE_RATE_LIMIT)
+ * Use for critical endpoints that should always have rate limiting
+ * Usage: const limiter = createForcedAuthLimiter();
+ */
+export const createForcedAuthLimiter = () => {
+  const limiter = createAuthLimiter();
+  return conditionalRateLimit(limiter, { name: 'Auth (Forced)', force: true });
 };

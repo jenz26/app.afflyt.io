@@ -12,7 +12,7 @@ import database from './config/database';
 import redis from './config/redis';
 import { Models } from './models';
 import { createRoutes, createAPIRoutes, createPublicRoutes } from './routes';
-import { createGeneralLimiter } from './middleware/rateLimiter';
+import { createConditionalGeneralLimiter } from './middleware/rateLimiter';
 
 // Types for error handling
 interface ApiError extends Error {
@@ -53,9 +53,16 @@ class App {
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-    // General rate limiting
-    //const generalLimiter = createGeneralLimiter();
-    //this.app.use(generalLimiter.middleware());
+    // ===== 🚀 NEW v1.8.1: CONDITIONAL GLOBAL RATE LIMITING =====
+    // General rate limiting - conditionally applied based on DISABLE_RATE_LIMIT
+    const globalRateLimiter = createConditionalGeneralLimiter();
+    this.app.use(globalRateLimiter);
+    
+    // Log rate limiting status
+    if (process.env.NODE_ENV === 'development') {
+      const status = process.env.DISABLE_RATE_LIMIT === 'true' ? 'DISABLED' : 'ENABLED';
+      console.log(`🛡️  Global Rate Limiting: ${status}`);
+    }
   }
 
   private initializeRoutes(): void {
@@ -63,7 +70,7 @@ class App {
       throw new Error('Models not initialized. Call initializeDatabase() first.');
     }
 
-    // Health check endpoint
+    // Health check endpoint (exempt from rate limiting)
     this.app.get('/health', (req: Request, res: Response) => {
       res.status(200).json({
         status: 'OK',
@@ -73,6 +80,10 @@ class App {
         services: {
           database: 'connected',
           redis: 'connected'
+        },
+        rateLimiting: {
+          enabled: process.env.DISABLE_RATE_LIMIT !== 'true',
+          globalLimiter: 'conditional'
         }
       });
     });
@@ -89,7 +100,7 @@ class App {
     // API info endpoint (updated)
     this.app.get('/api/v1', (req: Request, res: Response) => {
       res.status(200).json({
-        message: 'Afflyt.io API v1.3.0',
+        message: 'Afflyt.io API v1.8.1',
         status: 'active',
         timestamp: new Date().toISOString(),
         endpoints: {
@@ -111,20 +122,33 @@ class App {
         },
         documentation: '/docs', // Future Swagger endpoint
         version: {
-          current: 'v1.3.0',
-          description: 'Backend API Completo MVP (Dashboard & Analytics)'
+          current: 'v1.8.1',
+          description: 'Rate Limiting Hardening & Production Optimization',
+          changes: [
+            'Conditional rate limiting based on DISABLE_RATE_LIMIT environment variable',
+            'Enhanced rate limiting headers and logging',
+            'Granular control for development vs production environments'
+          ]
+        },
+        rateLimiting: {
+          enabled: process.env.DISABLE_RATE_LIMIT !== 'true',
+          global: {
+            windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+            maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100')
+          }
         }
       });
     });
+    
     // Debug: Print all registered routes
-if (process.env.NODE_ENV === 'development') {
-  console.log('🛣️  Registered routes:');
-  this.app._router.stack.forEach((layer: any) => {
-    if (layer.route) {
-      console.log(`  ${Object.keys(layer.route.methods).join(', ').toUpperCase()} ${layer.route.path}`);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🛣️  Registered routes:');
+      this.app._router.stack.forEach((layer: any) => {
+        if (layer.route) {
+          console.log(`  ${Object.keys(layer.route.methods).join(', ').toUpperCase()} ${layer.route.path}`);
+        }
+      });
     }
-  });
-}
 
     // Future: Swagger documentation endpoint
     this.app.get('/docs', (req: Request, res: Response) => {
@@ -183,6 +207,7 @@ if (process.env.NODE_ENV === 'development') {
       console.log('✅ Application initialized successfully');
       console.log('📊 Models loaded: User, AffiliateLink, Click, UserSetting, Conversion');
       console.log('🛣️  Routes configured: Legacy API (v1.2.0) + New API (v1.3.0)');
+      console.log(`🛡️  Rate Limiting: ${process.env.DISABLE_RATE_LIMIT === 'true' ? '❌ DISABLED' : '✅ ENABLED'} (v1.8.1)`);
     } catch (error) {
       console.error('Failed to initialize database connections:', error);
       throw error;
