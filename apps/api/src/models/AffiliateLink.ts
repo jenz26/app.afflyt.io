@@ -22,24 +22,50 @@ export class AffiliateLinkModel {
     }
   }
 
-  async create(linkData: Omit<AffiliateLink, '_id' | 'hash' | 'createdAt' | 'updatedAt' | 'clickCount' | 'uniqueClickCount' | 'conversionCount' | 'totalRevenue'>): Promise<AffiliateLink> {
-    const now = new Date();
-    const hash = this.generateHash();
-    
-    const affiliateLink: AffiliateLink = {
-      ...linkData,
-      hash,
-      isActive: true,
-      clickCount: 0,
-      uniqueClickCount: 0,
-      conversionCount: 0,
-      totalRevenue: 0,
-      createdAt: now,
-      updatedAt: now
-    };
+  async create(linkData: Omit<AffiliateLink, '_id' | 'hash' | 'createdAt' | 'updatedAt' | 'clickCount' | 'uniqueClickCount' | 'conversionCount' | 'totalRevenue' | 'isActive'>): Promise<AffiliateLink> {
 
-    const result = await this.collection.insertOne(affiliateLink);
-    return { ...affiliateLink, _id: result.insertedId };
+    const now = new Date();
+    const maxRetries = 5;
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+      try {
+        const hash = this.generateHash();
+        
+        const affiliateLink: AffiliateLink = {
+          ...linkData,
+          hash,
+          isActive: true,
+          clickCount: 0,
+          uniqueClickCount: 0,
+          conversionCount: 0,
+          totalRevenue: 0,
+          createdAt: now,
+          updatedAt: now
+        };
+
+        const result = await this.collection.insertOne(affiliateLink);
+        return { ...affiliateLink, _id: result.insertedId };
+        
+      } catch (error: any) {
+        // Gestisce specificamente l'errore di chiave duplicata di MongoDB
+        if (error.code === 11000 && error.keyPattern?.hash) {
+          attempt++;
+          if (attempt >= maxRetries) {
+            throw new Error(`Failed to generate unique hash after ${maxRetries} attempts`);
+          }
+          // Log per monitoraggio delle collisioni
+          console.warn(`🔄 Hash collision detected, retrying... (attempt ${attempt}/${maxRetries})`);
+          continue;
+        }
+        
+        // Re-lancia altri errori non correlati alle collisioni
+        throw error;
+      }
+    }
+    
+    // Questo punto non dovrebbe mai essere raggiunto, ma per sicurezza TypeScript
+    throw new Error('Unexpected error in hash generation process');
   }
 
   async findByHash(hash: string): Promise<AffiliateLink | null> {
