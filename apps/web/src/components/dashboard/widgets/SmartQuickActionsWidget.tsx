@@ -2,7 +2,7 @@
 'use client';
 
 import { useAuth } from '@/hooks/useAuth';
-import { useStats } from '@/hooks/useStats';
+import { useStats } from '@/hooks/useApi';
 import { useApiKeys, useUserProfile } from '@/hooks/useApi';
 import { 
   Plus, 

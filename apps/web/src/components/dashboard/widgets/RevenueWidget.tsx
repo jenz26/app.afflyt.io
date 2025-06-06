@@ -1,7 +1,7 @@
 // apps/web/src/components/dashboard/widgets/RevenueWidget.tsx
 'use client';
 
-import { useStats } from '@/hooks/useStats';
+import { useStats } from '@/hooks/useApi';
 import { useRevenueTrend } from '@/hooks/useRevenueTrend';
 import { Euro, TrendingUp, TrendingDown, AlertCircle, Target } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, BarChart, Bar, ComposedChart, Line } from 'recharts';

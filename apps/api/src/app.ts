@@ -50,7 +50,34 @@ class App {
       origin: allowedOrigins,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'limit', 'groupby', 'startdate', 'enddate'],
+      allowedHeaders: [
+  'Content-Type', 
+  'Authorization', 
+  'X-API-Key',
+  // ✅ ANALYTICS HEADERS v1.8.5
+  'sortBy',
+  'sortby', 
+  'granularity',
+  'startDate',
+  'startdate',
+  'endDate', 
+  'enddate',
+  'period',
+  'linkId',
+  'linkid',
+  'channelId',
+  'amazonTagId',
+  'subId',
+  'subid',
+  'device',
+  'browser',
+  'geo',
+  'referer',
+  'limit',
+  'groupby',
+  'groupBy'
+],
+
       exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset']
     }));
     logger.debug({ allowedOrigins }, 'CORS middleware initialized');

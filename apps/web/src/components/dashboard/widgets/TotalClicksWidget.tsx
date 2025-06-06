@@ -1,7 +1,7 @@
 // apps/web/src/components/dashboard/widgets/TotalClicksWidget.tsx
 'use client';
 
-import { useStats } from '@/hooks/useStats';
+import { useStats } from '@/hooks/useApi';
 import { useClicksTrend } from '@/hooks/useClicksTrend';
 import { TrendingUp, TrendingDown, Mouse, AlertCircle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Area, AreaChart } from 'recharts';

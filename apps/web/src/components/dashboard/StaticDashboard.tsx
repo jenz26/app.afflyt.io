@@ -4,7 +4,7 @@
 import { RecentLinksWidget } from './widgets/RecentLinksWidget';
 import { AccountHealthWidget } from './widgets/AccountHealthWidget';
 import { SmartQuickActionsWidget } from './widgets/SmartQuickActionsWidget';
-import { useStats } from '@/hooks/useStats';
+import { useStats } from '@/hooks/useApi';
 import { useClicksTrend } from '@/hooks/useClicksTrend';
 import { useRevenueTrend } from '@/hooks/useRevenueTrend';
 import { useAuth } from '@/hooks/useAuth';
