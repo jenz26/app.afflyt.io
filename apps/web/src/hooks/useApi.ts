@@ -5,7 +5,7 @@
  * API Hooks for Afflyt.io
  * Provides React hooks for data fetching with authentication integration
  * 
- * @version 1.8.2 - FIXED: Unified types with analytics.ts to prevent [object Object] errors
+ * @version 1.8.6 - ENHANCED: Type-safe API responses with standardized structure handling
  * @phase Frontend-Backend Integration + Advanced Analytics
  */
 
@@ -21,6 +21,87 @@ import type {
   UseStatsOptions,
   LinkData 
 } from '@/types/analytics';
+
+// ✨ NEW v1.8.6: Standardized API Response Types
+export interface StandardApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+  statusCode?: number;
+  pagination?: {
+    limit: number;
+    offset: number;
+    total?: number;
+    hasMore?: boolean;
+  };
+}
+
+// ✨ NEW v1.8.6: Specific Response Types for Different Endpoints
+export interface LinkCreationResponse {
+  link: AffiliateLink;
+}
+
+export interface LinksListResponse {
+  links: AffiliateLink[];
+}
+
+export interface AmazonTagsResponse {
+  amazonTags: AmazonTag[];
+}
+
+export interface ChannelsResponse {
+  channels: Channel[];
+}
+
+export interface ApiKeysResponse {
+  apiKeys: ApiKeyData[];
+}
+
+export interface UserProfileResponse {
+  user: UserProfile;
+}
+
+// ✨ NEW v1.8.6: Union types for flexible response handling
+export type ApiResponse<T> = T | StandardApiResponse<T>;
+
+// ✨ NEW v1.8.6: Utility function to safely extract data from API responses
+export function extractApiData<T>(response: ApiResponse<T>): T {
+  if (!response) {
+    throw new Error('No response data received');
+  }
+
+  // Check if it's a standardized response structure
+  if (typeof response === 'object' && response !== null && 'success' in response) {
+    const standardResponse = response as StandardApiResponse<T>;
+    
+    if (!standardResponse.success) {
+      throw new Error(standardResponse.error || 'API request failed');
+    }
+    
+    if (standardResponse.data !== undefined) {
+      return standardResponse.data;
+    }
+    
+    // If no data property but success is true, return the whole response minus metadata
+    const { success, message, error, statusCode, pagination, ...data } = standardResponse;
+    return data as T;
+  }
+
+  // Direct response (legacy format)
+  return response as T;
+}
+
+// ✨ NEW v1.8.6: Enhanced Link creation data interface
+export interface CreateLinkData {
+  originalUrl: string;
+  tag?: string;
+  amazonTagId?: string;
+  channelId?: string;
+  source?: string;
+  expiresAt?: string;
+  metadata?: Record<string, any>;
+}
 
 // ✨ NEW: Advanced Filter Options Types
 export interface AnalyticsFilterOptions {
@@ -63,13 +144,25 @@ export interface TrendFilterOptions {
   subId?: string;
 }
 
-// ✅ FIXED: Remove duplicate StatsData interface - use the one from analytics.ts
-
-// ✅ FIXED: Rename to avoid confusion with LinkData from analytics.ts
+// ✅ ENHANCED: AffiliateLink interface with proper typing
 export interface AffiliateLink extends LinkData {
-  _id: string;
-  // Add any additional fields that are specific to the full link object
+  _id?: string;
+  id?: string;
+  hash: string;
+  originalUrl: string;
+  shortUrl?: string;
+  tag?: string;
+  amazonTagId?: string;
+  channelId?: string;
+  source?: string;
+  isActive: boolean;
+  clickCount: number;
+  uniqueClickCount: number;
+  conversionCount: number;
+  totalRevenue: number;
   expiresAt?: string;
+  createdAt: string;
+  updatedAt?: string;
   metadata?: Record<string, any>;
 }
 
@@ -220,6 +313,7 @@ const generateMockTrendData = (type: 'clicks' | 'revenue'): any[] => {
   
   return data;
 };
+
 const buildUrlParams = (filters: Record<string, any>): URLSearchParams => {
   const params = new URLSearchParams();
   
@@ -267,7 +361,7 @@ export function useApiCall<T = any>() {
       data?: any;
       headers?: Record<string, string>;
     }
-  ) => {
+  ): Promise<T | null> => {
     if (!isLoggedIn) {
       setError('Authentication required');
       return null;
@@ -283,29 +377,30 @@ export function useApiCall<T = any>() {
     setError(null);
 
     try {
-      let result: T;
+      let result: ApiResponse<T>;
       const { method = 'GET', data: requestData, headers } = options || {};
 
       switch (method) {
         case 'POST':
-          result = await apiClient.post<T>(endpoint, requestData, headers);
+          result = await apiClient.post<ApiResponse<T>>(endpoint, requestData, headers);
           break;
         case 'PUT':
-          result = await apiClient.put<T>(endpoint, requestData, headers);
+          result = await apiClient.put<ApiResponse<T>>(endpoint, requestData, headers);
           break;
         case 'PATCH':
-          result = await apiClient.patch<T>(endpoint, requestData, headers);
+          result = await apiClient.patch<ApiResponse<T>>(endpoint, requestData, headers);
           break;
         case 'DELETE':
-          result = await apiClient.delete<T>(endpoint, headers);
+          result = await apiClient.delete<ApiResponse<T>>(endpoint, headers);
           break;
         default:
-          result = await apiClient.get<T>(endpoint, headers);
+          result = await apiClient.get<ApiResponse<T>>(endpoint, headers);
       }
 
-      setData(result);
+      const extractedData = extractApiData<T>(result);
+      setData(extractedData);
       setIsLoading(false);
-      return result;
+      return extractedData;
     } catch (err) {
       const errorMessage = err instanceof AfflytApiError 
         ? err.message 
@@ -332,7 +427,7 @@ export function useApiCall<T = any>() {
   };
 }
 
-// ✅ FIXED: Updated hook for fetching user statistics with unified types and safe fallbacks
+// ✅ ENHANCED: Updated hook for fetching user statistics with proper type safety
 export function useStats(autoFetch = true) {
   const [data, setData] = useState<StatsData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -340,50 +435,56 @@ export function useStats(autoFetch = true) {
   const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
   const fetchStats = useCallback(async (filters?: AnalyticsFilterOptions) => {
-  if (!isLoggedIn) return;
+    if (!isLoggedIn) return;
 
-  const apiClient = getAuthenticatedApiClient();
-  if (!apiClient) return;
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) return;
 
-  setIsLoading(true);
-  setError(null);
+    setIsLoading(true);
+    setError(null);
 
-  try {
-    // ✅ FIX: Only use the correct analytics endpoint
-    const params = buildUrlParams(filters || {});
-    const queryString = params.toString() ? `?${params.toString()}` : '';
-    
-    const result = await apiClient.get<any>(`/api/user/analytics/summary${queryString}`);
-    
-    // ✅ CRITICAL FIX v1.8.3: Handle standardized API responses
-    const processedData: StatsData = {
-      // Handle new standardized response structure (v1.8.3+)
-      // Backend returns: { success: true, data: { summary: {...} } }
-      totalLinks: result?.data?.summary?.totalLinks || result?.summary?.totalLinks || result?.totalLinks || 0,
-      totalClicks: result?.data?.summary?.totalClicks || result?.summary?.totalClicks || result?.totalClicks || 0,
-      uniqueClicks: result?.data?.summary?.uniqueClicks || result?.summary?.uniqueClicks || result?.uniqueClicks || result?.totalClicks || 0,
-      totalConversions: result?.data?.summary?.totalConversions || result?.summary?.totalConversions || result?.totalConversions || 0,
-      pendingConversions: result?.data?.summary?.pendingConversions || result?.summary?.pendingConversions || result?.pendingConversions || 0,
-      rejectedConversions: result?.data?.summary?.rejectedConversions || result?.summary?.rejectedConversions || result?.rejectedConversions || 0,
-      totalRevenue: result?.data?.summary?.totalRevenue || result?.summary?.totalRevenue || result?.totalRevenue || 0,
-      conversionRate: result?.data?.summary?.conversionRate || result?.summary?.conversionRate || result?.conversionRate || 0,
-      earningsPerClick: result?.data?.summary?.earningsPerClick || result?.summary?.earningsPerClick || result?.earningsPerClick || 0,
-      dataPeriod: result?.data?.summary?.dataPeriod || result?.summary?.dataPeriod || result?.dataPeriod || {
-        startDate: filters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        endDate: filters?.endDate || new Date().toISOString().split('T')[0]
+    try {
+      const params = buildUrlParams(filters || {});
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      
+      const result = await apiClient.get<ApiResponse<{ summary: StatsData }>>(`/api/user/analytics/summary${queryString}`);
+      
+      try {
+        const extractedData = extractApiData(result);
+        const statsData = extractedData?.summary || extractedData;
+        
+        const processedData: StatsData = {
+          totalLinks: statsData?.totalLinks || 0,
+          totalClicks: statsData?.totalClicks || 0,
+          uniqueClicks: statsData?.uniqueClicks || statsData?.totalClicks || 0,
+          totalConversions: statsData?.totalConversions || 0,
+          pendingConversions: statsData?.pendingConversions || 0,
+          rejectedConversions: statsData?.rejectedConversions || 0,
+          totalRevenue: statsData?.totalRevenue || 0,
+          conversionRate: statsData?.conversionRate || 0,
+          earningsPerClick: statsData?.earningsPerClick || 0,
+          dataPeriod: statsData?.dataPeriod || {
+            startDate: filters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            endDate: filters?.endDate || new Date().toISOString().split('T')[0]
+          }
+        };
+        
+        setData(processedData);
+      } catch (extractError) {
+        console.warn('Failed to extract stats data, using fallback handling:', extractError);
+        // Fallback to original logic for backwards compatibility
+        const statsData = (result as any)?.data?.summary || (result as any)?.summary || result;
+        setData(statsData);
       }
-    };
-    
-    setData(processedData);
-  } catch (err) {
-    const errorMessage = err instanceof AfflytApiError 
-      ? err.message 
-      : 'Failed to fetch statistics';
-    setError(errorMessage);
-  } finally {
-    setIsLoading(false);
-  }
-}, [isLoggedIn, getAuthenticatedApiClient]);
+    } catch (err) {
+      const errorMessage = err instanceof AfflytApiError 
+        ? err.message 
+        : 'Failed to fetch statistics';
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient]);
 
   useEffect(() => {
     if (autoFetch && isLoggedIn) {
@@ -399,7 +500,7 @@ export function useStats(autoFetch = true) {
   };
 }
 
-// ✅ FIXED: Updated hook for fetching user's affiliate links with proper type handling
+// ✅ ENHANCED: Updated hook for fetching user's affiliate links with proper type handling
 export function useLinks(autoFetch = true) {
   const [data, setData] = useState<AffiliateLink[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -418,14 +519,20 @@ export function useLinks(autoFetch = true) {
     try {
       const params = buildUrlParams(filters || {});
       const endpoint = `/api/user/links${params.toString() ? `?${params.toString()}` : ''}`;
-      const result = await apiClient.get<any>(endpoint);
+      const result = await apiClient.get<ApiResponse<LinksListResponse>>(endpoint);
       
-      // ✅ SAFE: Ensure we always have an array
-      const linksArray = Array.isArray(result) ? result : 
-                        result?.links ? result.links : 
-                        result?.data ? result.data : [];
-      
-      setData(linksArray);
+      try {
+        const extractedData = extractApiData(result);
+        const linksArray = extractedData?.links || extractedData || [];
+        setData(Array.isArray(linksArray) ? linksArray : []);
+      } catch (extractError) {
+        console.warn('Failed to extract links data, using fallback handling:', extractError);
+        // Fallback for backwards compatibility
+        const linksArray = Array.isArray(result) ? result : 
+                          (result as any)?.links ? (result as any).links : 
+                          (result as any)?.data ? (result as any).data : [];
+        setData(linksArray);
+      }
     } catch (err) {
       const errorMessage = err instanceof AfflytApiError 
         ? err.message 
@@ -436,25 +543,30 @@ export function useLinks(autoFetch = true) {
     }
   }, [isLoggedIn, getAuthenticatedApiClient]);
 
-  // Create new link
-  const createLink = useCallback(async (linkData: {
-    originalUrl: string;
-    tag?: string;
-    metadata?: Record<string, any>;
-  }) => {
+  // ✅ ENHANCED: Type-safe createLink function
+  const createLink = useCallback(async (linkData: CreateLinkData): Promise<AffiliateLink> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
     if (!apiClient) throw new Error('Authentication client not available');
 
     try {
-      const result = await apiClient.post<AffiliateLink>('/api/v1/links', linkData);
+      const result = await apiClient.post<ApiResponse<LinkCreationResponse>>('/api/v1/links', linkData);
+      
+      // ✅ TYPE-SAFE: Use the new extraction utility
+      const extractedData = extractApiData(result);
+      const linkObject = extractedData?.link || extractedData;
+      
+      if (!linkObject || !linkObject.hash) {
+        throw new Error('Invalid link data received from server');
+      }
       
       // Refresh the links list
       fetchLinks();
       
-      return result;
+      return linkObject;
     } catch (err) {
+      console.error('Create link error:', err);
       throw err;
     }
   }, [isLoggedIn, getAuthenticatedApiClient, fetchLinks]);
@@ -474,7 +586,7 @@ export function useLinks(autoFetch = true) {
   };
 }
 
-// ✅ FIXED: Updated hook for fetching clicks trend data with safe array handling
+// ✅ ENHANCED: Updated hook for fetching clicks trend data with type safety
 export function useClicksTrend(filters?: TrendFilterOptions, autoFetch = true) {
   const [data, setData] = useState<ClickTrendData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -491,7 +603,6 @@ export function useClicksTrend(filters?: TrendFilterOptions, autoFetch = true) {
     setError(null);
 
     try {
-      // Use custom filters if provided, otherwise use the hook's filters
       const activeFilters = customFilters || filters || {};
       const params = buildUrlParams(activeFilters);
       
@@ -500,27 +611,24 @@ export function useClicksTrend(filters?: TrendFilterOptions, autoFetch = true) {
       
       try {
         const endpoint = `/api/user/analytics/clicks-trend${queryString}`;
-        result = await apiClient.get<any>(endpoint);
+        result = await apiClient.get<ApiResponse<{ trend: ClickTrendData[] }>>(endpoint);
+        
+        const extractedData = extractApiData(result);
+        const trendsArray = extractedData?.trend || extractedData || [];
+        
+        // Validate and normalize data
+        const normalizedTrends = trendsArray.map((item: any) => ({
+          date: item?.date || '',
+          clicks: item?.clicks || 0,
+          uniqueClicks: item?.uniqueClicks || item?.clicks || 0
+        }));
+        
+        setData(normalizedTrends);
       } catch (backendError) {
         console.log('Clicks trend endpoint not available, using mock data');
-        result = generateMockTrendData('clicks');
+        const mockData = generateMockTrendData('clicks');
+        setData(mockData);
       }
-      
-      // ✅ SAFE v1.8.3: Handle standardized response structure  
-      let trendsArray = Array.isArray(result) ? result : 
-                       result?.data?.trend ? result.data.trend :
-                       result?.data ? (Array.isArray(result.data) ? result.data : []) :
-                       result?.trend ? result.trend : 
-                       result?.trends ? result.trends : [];
-      
-      // ✅ SAFE: Validate each trend item has required fields
-      trendsArray = trendsArray.map((item: any) => ({
-        date: item?.date || '',
-        clicks: item?.clicks || 0,
-        uniqueClicks: item?.uniqueClicks || item?.clicks || 0
-      }));
-      
-      setData(trendsArray);
     } catch (err) {
       const errorMessage = err instanceof AfflytApiError 
         ? err.message 
@@ -545,7 +653,7 @@ export function useClicksTrend(filters?: TrendFilterOptions, autoFetch = true) {
   };
 }
 
-// ✅ FIXED: Updated hook for fetching revenue trend data with safe array handling
+// ✅ ENHANCED: Updated hook for fetching revenue trend data with type safety
 export function useRevenueTrend(filters?: TrendFilterOptions, autoFetch = true) {
   const [data, setData] = useState<RevenueTrendDataType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -562,7 +670,6 @@ export function useRevenueTrend(filters?: TrendFilterOptions, autoFetch = true) 
     setError(null);
 
     try {
-      // Use custom filters if provided, otherwise use the hook's filters
       const activeFilters = customFilters || filters || {};
       const params = buildUrlParams(activeFilters);
       
@@ -571,27 +678,24 @@ export function useRevenueTrend(filters?: TrendFilterOptions, autoFetch = true) 
       
       try {
         const endpoint = `/api/user/analytics/revenue-trend${queryString}`;
-        result = await apiClient.get<any>(endpoint);
+        result = await apiClient.get<ApiResponse<{ trend: RevenueTrendDataType[] }>>(endpoint);
+        
+        const extractedData = extractApiData(result);
+        const trendsArray = extractedData?.trend || extractedData || [];
+        
+        // Validate and normalize data
+        const normalizedTrends = trendsArray.map((item: any) => ({
+          date: item?.date || '',
+          revenue: item?.revenue || 0,
+          conversions: item?.conversions || 0
+        }));
+        
+        setData(normalizedTrends);
       } catch (backendError) {
         console.log('Revenue trend endpoint not available, using mock data');
-        result = generateMockTrendData('revenue');
+        const mockData = generateMockTrendData('revenue');
+        setData(mockData);
       }
-      
-      // ✅ SAFE v1.8.3: Handle standardized response structure  
-      let trendsArray = Array.isArray(result) ? result : 
-                       result?.data?.trend ? result.data.trend :
-                       result?.data ? (Array.isArray(result.data) ? result.data : []) :
-                       result?.trend ? result.trend : 
-                       result?.trends ? result.trends : [];
-      
-      // ✅ SAFE: Validate each trend item has required fields
-      trendsArray = trendsArray.map((item: any) => ({
-        date: item?.date || '',
-        revenue: item?.revenue || 0,
-        conversions: item?.conversions || 0
-      }));
-      
-      setData(trendsArray);
     } catch (err) {
       const errorMessage = err instanceof AfflytApiError 
         ? err.message 
@@ -616,7 +720,7 @@ export function useRevenueTrend(filters?: TrendFilterOptions, autoFetch = true) 
   };
 }
 
-// Hook for managing API keys (unchanged)
+// Hook for managing API keys (enhanced with type safety)
 export function useApiKeys(autoFetch = true) {
   const [data, setData] = useState<ApiKeyData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -624,69 +728,78 @@ export function useApiKeys(autoFetch = true) {
   const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
   const fetchApiKeys = useCallback(async () => {
-  if (!isLoggedIn) return;
+    if (!isLoggedIn) return;
 
-  const apiClient = getAuthenticatedApiClient();
-  if (!apiClient) return;
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) return;
 
-  setIsLoading(true);
-  setError(null);
+    setIsLoading(true);
+    setError(null);
 
-  try {
-    const result = await apiClient.get('/api/user/keys');
-    
-    // 🔧 FIX: Il backend ritorna { success: true, data: { apiKeys: [...] } }
-    const apiKeysData = result?.data?.apiKeys || result?.apiKeys || result || [];
-    setData(Array.isArray(apiKeysData) ? apiKeysData : []);
-  } catch (err) {
-    const errorMessage = err instanceof AfflytApiError 
-      ? err.message 
-      : 'Failed to fetch API keys';
-    setError(errorMessage);
-  } finally {
-    setIsLoading(false);
-  }
-}, [isLoggedIn, getAuthenticatedApiClient]);
+    try {
+      const result = await apiClient.get<ApiResponse<ApiKeysResponse>>('/api/user/keys');
+      
+      try {
+        const extractedData = extractApiData(result);
+        const apiKeysData = extractedData?.apiKeys || extractedData || [];
+        setData(Array.isArray(apiKeysData) ? apiKeysData : []);
+      } catch (extractError) {
+        console.warn('Failed to extract API keys data, using fallback handling:', extractError);
+        // Fallback for backwards compatibility
+        const apiKeysData = (result as any)?.data?.apiKeys || (result as any)?.apiKeys || result || [];
+        setData(Array.isArray(apiKeysData) ? apiKeysData : []);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof AfflytApiError 
+        ? err.message 
+        : 'Failed to fetch API keys';
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient]);
 
-  const createApiKey = useCallback(async (name: string) => {
-  if (!isLoggedIn) throw new Error('Authentication required');
-
-  const apiClient = getAuthenticatedApiClient();
-  if (!apiClient) throw new Error('Authentication client not available');
-
-  try {
-    const result = await apiClient.post('/api/user/keys', { name });
-    
-    // 🔧 FIX: Il backend ritorna { apiKey: { key: "...", ... } }
-    // Ma noi ci aspettiamo { key: "...", ... } direttamente
-    const apiKeyData = result?.apiKey || result;
-    
-    console.log('🔑 API Key Data:', apiKeyData);
-    
-    fetchApiKeys(); // Refresh the list
-    return apiKeyData; // ← Ritorna apiKeyData invece di result
-  } catch (err) {
-    console.error('❌ Create API Key Error:', err);
-    throw err;
-  }
-}, [isLoggedIn, getAuthenticatedApiClient, fetchApiKeys]);
-
-  const updateApiKey = useCallback(async (keyId: string, updates: { name?: string; isActive?: boolean }) => {
+  const createApiKey = useCallback(async (name: string): Promise<ApiKeyData> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
     if (!apiClient) throw new Error('Authentication client not available');
 
     try {
-      const result = await apiClient.patch(`/api/user/keys/${keyId}`, updates);
+      const result = await apiClient.post<ApiResponse<{ apiKey: ApiKeyData }>>('/api/user/keys', { name });
+      
+      const extractedData = extractApiData(result);
+      const apiKeyData = extractedData?.apiKey || extractedData;
+      
+      console.log('🔑 API Key Data:', apiKeyData);
+      
       fetchApiKeys(); // Refresh the list
-      return result;
+      return apiKeyData;
+    } catch (err) {
+      console.error('❌ Create API Key Error:', err);
+      throw err;
+    }
+  }, [isLoggedIn, getAuthenticatedApiClient, fetchApiKeys]);
+
+  const updateApiKey = useCallback(async (keyId: string, updates: { name?: string; isActive?: boolean }): Promise<ApiKeyData> => {
+    if (!isLoggedIn) throw new Error('Authentication required');
+
+    const apiClient = getAuthenticatedApiClient();
+    if (!apiClient) throw new Error('Authentication client not available');
+
+    try {
+      const result = await apiClient.patch<ApiResponse<{ apiKey: ApiKeyData }>>(`/api/user/keys/${keyId}`, updates);
+      const extractedData = extractApiData(result);
+      const apiKeyData = extractedData?.apiKey || extractedData;
+      
+      fetchApiKeys(); // Refresh the list
+      return apiKeyData;
     } catch (err) {
       throw err;
     }
   }, [isLoggedIn, getAuthenticatedApiClient, fetchApiKeys]);
 
-  const deleteApiKey = useCallback(async (keyId: string) => {
+  const deleteApiKey = useCallback(async (keyId: string): Promise<void> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
@@ -752,7 +865,7 @@ export interface UserProfileUpdateData {
   defaultChannelId?: string;
 }
 
-// Hook for user profile management (UPDATED for v1.8.x)
+// Hook for user profile management (UPDATED for v1.8.x with type safety)
 export function useUserProfile(autoFetch = true) {
   const [data, setData] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -769,9 +882,17 @@ export function useUserProfile(autoFetch = true) {
     setError(null);
 
     try {
-      const result = await apiClient.get<{ user: UserProfile }>('/api/user/me');
-      const userData = result?.user || result;
-      setData(userData);
+      const result = await apiClient.get<ApiResponse<UserProfileResponse>>('/api/user/me');
+      
+      try {
+        const extractedData = extractApiData(result);
+        const userData = extractedData?.user || extractedData;
+        setData(userData);
+      } catch (extractError) {
+        console.warn('Failed to extract user profile data, using fallback handling:', extractError);
+        const userData = (result as any)?.user || result;
+        setData(userData);
+      }
     } catch (err) {
       const errorMessage = err instanceof AfflytApiError 
         ? err.message 
@@ -782,7 +903,7 @@ export function useUserProfile(autoFetch = true) {
     }
   }, [isLoggedIn, getAuthenticatedApiClient]);
 
-  const updateUserProfile = useCallback(async (updates: UserProfileUpdateData) => {
+  const updateUserProfile = useCallback(async (updates: UserProfileUpdateData): Promise<UserProfile> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
@@ -792,8 +913,10 @@ export function useUserProfile(autoFetch = true) {
     setError(null);
 
     try {
-      const result = await apiClient.put<{ user: UserProfile }>('/api/user/me', updates);
-      const userData = result?.user || result;
+      const result = await apiClient.put<ApiResponse<UserProfileResponse>>('/api/user/me', updates);
+      
+      const extractedData = extractApiData(result);
+      const userData = extractedData?.user || extractedData;
       setData(userData);
       
       // Update auth context if the user object is updated
@@ -862,7 +985,7 @@ export function useUserProfile(autoFetch = true) {
   };
 }
 
-// ✨ NEW v1.8.x: Hook for managing Amazon Tags
+// ✨ NEW v1.8.x: Hook for managing Amazon Tags (enhanced with type safety)
 export function useAmazonTags(autoFetch = true) {
   const [data, setData] = useState<AmazonTag[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -879,9 +1002,17 @@ export function useAmazonTags(autoFetch = true) {
     setError(null);
 
     try {
-      const result = await apiClient.get<{ amazonTags: AmazonTag[] }>('/api/user/amazon-tags');
-      const tagsData = result?.amazonTags || result || [];
-      setData(Array.isArray(tagsData) ? tagsData : []);
+      const result = await apiClient.get<ApiResponse<AmazonTagsResponse>>('/api/user/amazon-tags');
+      
+      try {
+        const extractedData = extractApiData(result);
+        const tagsData = extractedData?.amazonTags || extractedData || [];
+        setData(Array.isArray(tagsData) ? tagsData : []);
+      } catch (extractError) {
+        console.warn('Failed to extract Amazon tags data, using fallback handling:', extractError);
+        const tagsData = (result as any)?.amazonTags || result || [];
+        setData(Array.isArray(tagsData) ? tagsData : []);
+      }
     } catch (err) {
       const errorMessage = err instanceof AfflytApiError 
         ? err.message 
@@ -892,37 +1023,45 @@ export function useAmazonTags(autoFetch = true) {
     }
   }, [isLoggedIn, getAuthenticatedApiClient]);
 
-  const createAmazonTag = useCallback(async (tagData: CreateAmazonTagData) => {
+  const createAmazonTag = useCallback(async (tagData: CreateAmazonTagData): Promise<AmazonTag> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
     if (!apiClient) throw new Error('Authentication client not available');
 
     try {
-      const result = await apiClient.post<{ amazonTag: AmazonTag }>('/api/user/amazon-tags', tagData);
+      const result = await apiClient.post<ApiResponse<{ amazonTag: AmazonTag }>>('/api/user/amazon-tags', tagData);
+      
+      const extractedData = extractApiData(result);
+      const amazonTag = extractedData?.amazonTag || extractedData;
+      
       fetchAmazonTags(); // Refresh the list
-      return result?.amazonTag || result;
+      return amazonTag;
     } catch (err) {
       throw err;
     }
   }, [isLoggedIn, getAuthenticatedApiClient, fetchAmazonTags]);
 
-  const updateAmazonTag = useCallback(async (tagId: string, updates: UpdateAmazonTagData) => {
+  const updateAmazonTag = useCallback(async (tagId: string, updates: UpdateAmazonTagData): Promise<AmazonTag> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
     if (!apiClient) throw new Error('Authentication client not available');
 
     try {
-      const result = await apiClient.patch<{ amazonTag: AmazonTag }>(`/api/user/amazon-tags/${tagId}`, updates);
+      const result = await apiClient.patch<ApiResponse<{ amazonTag: AmazonTag }>>(`/api/user/amazon-tags/${tagId}`, updates);
+      
+      const extractedData = extractApiData(result);
+      const amazonTag = extractedData?.amazonTag || extractedData;
+      
       fetchAmazonTags(); // Refresh the list
-      return result?.amazonTag || result;
+      return amazonTag;
     } catch (err) {
       throw err;
     }
   }, [isLoggedIn, getAuthenticatedApiClient, fetchAmazonTags]);
 
-  const deleteAmazonTag = useCallback(async (tagId: string) => {
+  const deleteAmazonTag = useCallback(async (tagId: string): Promise<void> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
@@ -953,7 +1092,7 @@ export function useAmazonTags(autoFetch = true) {
   };
 }
 
-// ✨ NEW v1.8.x: Hook for managing Channels
+// ✨ NEW v1.8.x: Hook for managing Channels (enhanced with type safety)
 export function useChannels(autoFetch = true) {
   const [data, setData] = useState<Channel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -970,9 +1109,17 @@ export function useChannels(autoFetch = true) {
     setError(null);
 
     try {
-      const result = await apiClient.get<{ channels: Channel[] }>('/api/user/channels');
-      const channelsData = result?.channels || result || [];
-      setData(Array.isArray(channelsData) ? channelsData : []);
+      const result = await apiClient.get<ApiResponse<ChannelsResponse>>('/api/user/channels');
+      
+      try {
+        const extractedData = extractApiData(result);
+        const channelsData = extractedData?.channels || extractedData || [];
+        setData(Array.isArray(channelsData) ? channelsData : []);
+      } catch (extractError) {
+        console.warn('Failed to extract channels data, using fallback handling:', extractError);
+        const channelsData = (result as any)?.channels || result || [];
+        setData(Array.isArray(channelsData) ? channelsData : []);
+      }
     } catch (err) {
       const errorMessage = err instanceof AfflytApiError 
         ? err.message 
@@ -983,37 +1130,45 @@ export function useChannels(autoFetch = true) {
     }
   }, [isLoggedIn, getAuthenticatedApiClient]);
 
-  const createChannel = useCallback(async (channelData: CreateChannelData) => {
+  const createChannel = useCallback(async (channelData: CreateChannelData): Promise<Channel> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
     if (!apiClient) throw new Error('Authentication client not available');
 
     try {
-      const result = await apiClient.post<{ channel: Channel }>('/api/user/channels', channelData);
+      const result = await apiClient.post<ApiResponse<{ channel: Channel }>>('/api/user/channels', channelData);
+      
+      const extractedData = extractApiData(result);
+      const channel = extractedData?.channel || extractedData;
+      
       fetchChannels(); // Refresh the list
-      return result?.channel || result;
+      return channel;
     } catch (err) {
       throw err;
     }
   }, [isLoggedIn, getAuthenticatedApiClient, fetchChannels]);
 
-  const updateChannel = useCallback(async (channelId: string, updates: UpdateChannelData) => {
+  const updateChannel = useCallback(async (channelId: string, updates: UpdateChannelData): Promise<Channel> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
     if (!apiClient) throw new Error('Authentication client not available');
 
     try {
-      const result = await apiClient.patch<{ channel: Channel }>(`/api/user/channels/${channelId}`, updates);
+      const result = await apiClient.patch<ApiResponse<{ channel: Channel }>>(`/api/user/channels/${channelId}`, updates);
+      
+      const extractedData = extractApiData(result);
+      const channel = extractedData?.channel || extractedData;
+      
       fetchChannels(); // Refresh the list
-      return result?.channel || result;
+      return channel;
     } catch (err) {
       throw err;
     }
   }, [isLoggedIn, getAuthenticatedApiClient, fetchChannels]);
 
-  const deleteChannel = useCallback(async (channelId: string) => {
+  const deleteChannel = useCallback(async (channelId: string): Promise<void> => {
     if (!isLoggedIn) throw new Error('Authentication required');
 
     const apiClient = getAuthenticatedApiClient();
