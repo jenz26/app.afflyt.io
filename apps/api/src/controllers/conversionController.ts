@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
+import { ValidatedRequest } from '../middleware/validation';
 import { ObjectId } from 'mongodb';
 import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
@@ -12,10 +13,22 @@ import {
   sendInternalError,
   createPagination
 } from '../utils/responseHelpers';
+import { validationSchemas } from '../schemas';
+import { z } from 'zod';
 
 // ===== 🚀 NEW v1.8.4: STRUCTURED LOGGING WITH PINO =====
 // Create module-specific logger for conversion operations
 const conversionLogger = createModuleLogger('conversion');
+
+// Type definitions for validated requests
+type GetUserConversionsRequest = AuthRequest & {
+  query: z.infer<typeof validationSchemas.userConversionsQuery>;
+};
+type TrackConversionRequest = ValidatedRequest<z.infer<typeof validationSchemas.trackConversion>>;
+type UpdateConversionStatusRequest = AuthRequest & {
+  body: z.infer<typeof validationSchemas.updateConversion>;
+  params: z.infer<typeof validationSchemas.paramConversionId>;
+};
 
 export class ConversionController {
   constructor(private models: Models) {
@@ -23,17 +36,18 @@ export class ConversionController {
   }
 
   // GET /api/user/conversions
-  getUserConversions = async (req: AuthRequest, res: Response): Promise<void> => {
+  getUserConversions = async (req: GetUserConversionsRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
       const {
         status,
-        sortBy = 'conversionTimestamp',
-        sortOrder = 'desc',
-        limit = '50',
-        offset = '0'
+        sortBy,
+        sortOrder,
+        limit,
+        offset
       } = req.query;
 
       conversionLogger.debug({ 
@@ -46,20 +60,20 @@ export class ConversionController {
       }, 'User conversions request started');
 
       const filters = {
-        status: status as 'pending' | 'approved' | 'rejected' | undefined,
-        sortBy: sortBy as string,
-        sortOrder: sortOrder as 'asc' | 'desc',
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string)
+        status,
+        sortBy,
+        sortOrder,
+        limit,
+        offset
       };
 
       const conversions = await this.models.conversion.findByUserId(user.id, filters);
 
-      // Arricchisci i dati con informazioni sui link
+      // Enrich data with link information
       const conversionsWithLinkData = await Promise.all(
         conversions.map(async (conversion) => {
           const link = await this.models.affiliateLink.findByHash(
-            // Nota: dovremmo avere linkHash nel conversion, per ora useremo linkId
+            // Note: We should have linkHash in conversion, for now use linkId
             conversion.linkId.toString()
           );
 
@@ -87,7 +101,7 @@ export class ConversionController {
         conversions: conversionsWithLinkData
       };
 
-      const pagination = createPagination(filters.limit, filters.offset, conversionsWithLinkData.length);
+      const pagination = createPagination(limit, offset, conversionsWithLinkData.length);
 
       // Log successful conversion retrieval
       conversionLogger.info({ 
@@ -106,11 +120,12 @@ export class ConversionController {
     }
   };
 
-  // POST /track/conversion - Public endpoint per postback/pixel
-  trackConversion = async (req: Request, res: Response): Promise<void> => {
+  // POST /track/conversion - Public endpoint for postback/pixel
+  trackConversion = async (req: TrackConversionRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
+      // ✅ Data is already validated by Zod middleware
       const {
         trackingId,
         payoutAmount,
@@ -127,14 +142,7 @@ export class ConversionController {
         ip: req.ip 
       }, 'Conversion tracking request started');
 
-      // Validazione parametri obbligatori
-      if (!trackingId || payoutAmount === undefined) {
-        conversionLogger.warn({ trackingId, payoutAmount }, 'Conversion tracking failed: missing required fields');
-        sendValidationError(res, 'trackingId and payoutAmount are required');
-        return;
-      }
-
-      // Trova il click associato tramite trackingId
+      // Find associated click via trackingId
       const click = await this.models.click.findByTrackingId(trackingId);
 
       if (!click) {
@@ -143,7 +151,7 @@ export class ConversionController {
         return;
       }
 
-      // Trova il link associato
+      // Find associated link
       const link = await this.models.affiliateLink.findByHash(click.linkHash);
       
       if (!link) {
@@ -155,7 +163,7 @@ export class ConversionController {
         return;
       }
 
-      // Verifica se la conversione esiste già
+      // Check if conversion already exists
       const existingConversion = await this.models.conversion.findByTrackingId(trackingId);
       
       if (existingConversion) {
@@ -168,26 +176,26 @@ export class ConversionController {
         return;
       }
 
-      // Crea la conversione
+      // Create conversion
       const conversionData = {
         linkId: link._id!,
         userId: link.userId,
         trackingId,
-        payoutAmount: parseFloat(payoutAmount),
-        advertiserRevenue: advertiserRevenue ? parseFloat(advertiserRevenue) : undefined,
+        payoutAmount,
+        advertiserRevenue,
         status: 'pending' as const,
         conversionTimestamp: new Date(),
         ipAddress: req.ip || req.connection.remoteAddress,
-        orderId: orderId || undefined,
-        notes: notes || undefined
+        orderId,
+        notes
       };
 
       const conversion = await this.models.conversion.create(conversionData);
 
-      // Aggiorna le statistiche del link
+      // Update link statistics
       await this.models.affiliateLink.updateStats(link.hash, {
         conversionCount: 1,
-        totalRevenue: conversionData.payoutAmount
+        totalRevenue: payoutAmount
       });
 
       const responseData = {
@@ -201,7 +209,7 @@ export class ConversionController {
         link.userId, 
         link._id!.toString(), 
         trackingId, 
-        conversionData.payoutAmount
+        payoutAmount
       );
       logUtils.performance.requestEnd('POST', '/track/conversion', Date.now() - startTime, 201);
 
@@ -217,12 +225,13 @@ export class ConversionController {
     }
   };
 
-  // PATCH /api/user/conversions/:conversionId - Aggiorna stato conversione (admin only future)
-  updateConversionStatus = async (req: AuthRequest, res: Response): Promise<void> => {
+  // PATCH /api/user/conversions/:conversionId - Update conversion status (admin only future)
+  updateConversionStatus = async (req: UpdateConversionStatusRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters and body already validated by Zod middleware
       const { conversionId } = req.params;
       const { status, notes } = req.body;
 
@@ -233,7 +242,7 @@ export class ConversionController {
         adminRole: user.role 
       }, 'Conversion status update request started');
 
-      // Solo admin possono modificare lo stato delle conversioni
+      // Only admins can modify conversion status
       if (user.role !== 'admin') {
         conversionLogger.warn({ 
           userId: user.id, 
@@ -244,20 +253,8 @@ export class ConversionController {
         return;
       }
 
-      if (!status || !['pending', 'approved', 'rejected'].includes(status)) {
-        conversionLogger.warn({ 
-          userId: user.id, 
-          conversionId, 
-          invalidStatus: status 
-        }, 'Conversion status update failed: invalid status');
-        sendValidationError(res, 'Valid status is required (pending, approved, rejected)');
-        return;
-      }
-
-      // Get current conversion for logging (we'll skip this for now since we need more context)
-      // const currentConversion = await this.models.conversion.findByConversionId(conversionId);
-      // For now, we'll just log the update without the old status
-      const oldStatus = 'unknown';
+      // Note: We'll use a fallback status since we don't have a findById method
+      const oldStatus = 'unknown'; // We could implement this later if needed
 
       const updated = await this.models.conversion.updateStatus(
         new ObjectId(conversionId),
@@ -275,9 +272,7 @@ export class ConversionController {
       }
 
       // Log successful status update  
-      if (conversionId) {
-        logUtils.conversions.updated(conversionId, 'unknown', status, user.id);
-      }
+      logUtils.conversions.updated(conversionId, oldStatus, status, user.id);
       logUtils.performance.requestEnd('PATCH', `/api/user/conversions/${conversionId}`, Date.now() - startTime, 200);
 
       sendSuccess(res, null, {
@@ -291,7 +286,7 @@ export class ConversionController {
     }
   };
 
-  // GET /api/user/conversions/stats - Statistiche conversioni per widget dashboard
+  // GET /api/user/conversions/stats - Conversion statistics for dashboard widget
   getConversionStats = async (req: AuthRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     

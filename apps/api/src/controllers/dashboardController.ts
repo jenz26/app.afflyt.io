@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
+import { ValidatedRequest } from '../middleware/validation';
 import { DashboardLayoutItem } from '../types';
 import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
@@ -8,10 +9,15 @@ import {
   sendValidationError,
   sendInternalError
 } from '../utils/responseHelpers';
+import { validationSchemas } from '../schemas';
+import { z } from 'zod';
 
 // ===== 🚀 NEW v1.8.4: STRUCTURED LOGGING WITH PINO =====
 // Create module-specific logger for dashboard operations
 const dashboardLogger = createModuleLogger('dashboard');
+
+// Type definitions for validated requests
+type UpdateDashboardLayoutRequest = ValidatedRequest<z.infer<typeof validationSchemas.updateDashboardLayout>> & AuthRequest;
 
 export class DashboardController {
   constructor(private models: Models) {
@@ -29,7 +35,7 @@ export class DashboardController {
 
       const userSetting = await this.models.userSetting.findByUserId(user.id);
 
-      // Se non esiste un layout, restituisci il layout di default
+      // If no layout exists, return default layout
       const defaultLayout: DashboardLayoutItem[] = [
         { i: 'total-clicks', x: 0, y: 0, w: 4, h: 2, minW: 3, minH: 2 },
         { i: 'total-revenue', x: 4, y: 0, w: 4, h: 2, minW: 3, minH: 2 },
@@ -65,50 +71,21 @@ export class DashboardController {
   };
 
   // PUT /api/user/dashboard-layout
-  updateDashboardLayout = async (req: AuthRequest, res: Response): Promise<void> => {
+  updateDashboardLayout = async (req: UpdateDashboardLayoutRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Data is already validated by Zod middleware (layout structure, widget IDs, etc.)
       const { layout } = req.body;
 
       dashboardLogger.debug({ 
         userId: user.id, 
-        layoutLength: layout?.length,
-        widgetIds: layout?.map((item: any) => item.i) 
+        layoutLength: layout.length,
+        widgetIds: layout.map((item: any) => item.i) 
       }, 'Dashboard layout update request started');
 
-      if (!layout || !Array.isArray(layout)) {
-        dashboardLogger.warn({ 
-          userId: user.id, 
-          layoutType: typeof layout 
-        }, 'Dashboard layout update failed: invalid layout format');
-        sendValidationError(res, 'Layout must be an array');
-        return;
-      }
-
-      // Validazione del layout
-      const isValidLayout = layout.every((item: any) => 
-        typeof item === 'object' &&
-        typeof item.i === 'string' &&
-        typeof item.x === 'number' &&
-        typeof item.y === 'number' &&
-        typeof item.w === 'number' &&
-        typeof item.h === 'number'
-      );
-
-      if (!isValidLayout) {
-        dashboardLogger.warn({ 
-          userId: user.id, 
-          invalidItems: layout.filter((item: any) => 
-            !item.i || typeof item.x !== 'number' || typeof item.y !== 'number' || typeof item.w !== 'number' || typeof item.h !== 'number'
-          ).map((item: any) => item.i || 'unknown')
-        }, 'Dashboard layout update failed: invalid item format');
-        sendValidationError(res, 'Invalid layout format. Each item must have i, x, y, w, h properties');
-        return;
-      }
-
-      // Widget ID validi
+      // Additional business logic validation for widget IDs
       const validWidgetIds = [
         'total-clicks',
         'total-revenue', 
@@ -122,7 +99,7 @@ export class DashboardController {
         'ai-insights'
       ];
 
-      // Verifica che tutti i widget ID siano validi
+      // Check if all widget IDs are valid (already validated by Zod, but double-check for business logic)
       const invalidWidgets = layout.filter((item: any) => 
         !validWidgetIds.includes(item.i)
       ).map((item: any) => item.i);
@@ -136,7 +113,7 @@ export class DashboardController {
         return;
       }
 
-      // Salva il layout
+      // Save the layout
       const userSetting = await this.models.userSetting.upsertDashboardLayout(
         user.id, 
         layout

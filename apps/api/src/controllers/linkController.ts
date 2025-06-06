@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
+import { ValidatedRequest } from '../middleware/validation';
 import { AffiliateLink } from '../types';
 import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
@@ -11,10 +12,30 @@ import {
   sendInternalError,
   createPagination
 } from '../utils/responseHelpers';
+import { validationSchemas } from '../schemas';
+import { z } from 'zod';
 
 // ===== 🚀 NEW v1.8.4: STRUCTURED LOGGING WITH PINO =====
 // Create module-specific logger for link operations
 const linkLogger = createModuleLogger('link');
+
+// Type definitions for validated requests
+type CreateLinkRequest = ValidatedRequest<z.infer<typeof validationSchemas.createAffiliateLink>> & AuthRequest;
+type GetLinksRequest = AuthRequest & {
+  query: z.infer<typeof validationSchemas.getLinks>;
+};
+type GetLinkByHashRequest = AuthRequest & {
+  params: z.infer<typeof validationSchemas.paramHash>;
+};
+type LinkStatsRequest = AuthRequest & {
+  query: z.infer<typeof validationSchemas.linkStats>;
+};
+type RedirectRequest = {
+  params: z.infer<typeof validationSchemas.paramHash>;
+  ip?: string;
+  connection?: any;
+  headers: any;
+};
 
 export class LinkController {
   constructor(private models: Models) {
@@ -22,43 +43,31 @@ export class LinkController {
   }
 
   // Create new affiliate link
-  create = async (req: AuthRequest, res: Response): Promise<void> => {
+  create = async (req: CreateLinkRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
-      const { originalUrl, tag } = req.body;
+      // ✅ Data is already validated by Zod middleware (URL format, Amazon domain, etc.)
+      const { originalUrl, tag, amazonTagId, channelId, source, expiresAt } = req.body;
       const user = req.user!;
 
       linkLogger.debug({ 
         userId: user.id, 
         originalUrl, 
-        tag 
+        tag,
+        amazonTagId,
+        channelId 
       }, 'Link creation request started');
 
-      // Validation
-      if (!originalUrl) {
-        linkLogger.warn({ userId: user.id }, 'Link creation failed: missing originalUrl');
-        sendValidationError(res, 'Original URL is required');
-        return;
-      }
-
-      // Validate URL format
-      try {
-        new URL(originalUrl);
-      } catch {
-        linkLogger.warn({ 
-          userId: user.id, 
-          originalUrl 
-        }, 'Link creation failed: invalid URL format');
-        sendValidationError(res, 'Invalid URL format');
-        return;
-      }
-
-      // Create affiliate link
+      // Create affiliate link - no validation needed, Zod already handled it
       const linkData = {
         userId: user.id,
         originalUrl,
         tag: tag || undefined,
+        amazonTagId,
+        channelId,
+        source,
+        expiresAt,
         isActive: true
       };
 
@@ -70,11 +79,15 @@ export class LinkController {
           originalUrl: affiliateLink.originalUrl,
           shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${affiliateLink.hash}`,
           tag: affiliateLink.tag,
+          amazonTagId: affiliateLink.amazonTagId,
+          channelId: affiliateLink.channelId,
+          source: affiliateLink.source,
           isActive: affiliateLink.isActive,
           clickCount: affiliateLink.clickCount,
           uniqueClickCount: affiliateLink.uniqueClickCount,
           conversionCount: affiliateLink.conversionCount,
           totalRevenue: affiliateLink.totalRevenue,
+          expiresAt: affiliateLink.expiresAt,
           createdAt: affiliateLink.createdAt
         }
       };
@@ -96,26 +109,26 @@ export class LinkController {
   };
 
   // Get user's affiliate links
-  getLinks = async (req: AuthRequest, res: Response): Promise<void> => {
+  getLinks = async (req: GetLinksRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
-      const { limit = '50', offset = '0' } = req.query;
-
-      const limitNum = parseInt(limit as string);
-      const offsetNum = parseInt(offset as string);
+      // ✅ Query parameters already validated by Zod middleware
+      const { limit, offset, sortBy, sortOrder, isActive, tag } = req.query;
 
       linkLogger.debug({ 
         userId: user.id, 
-        limit: limitNum, 
-        offset: offsetNum 
+        limit, 
+        offset,
+        sortBy,
+        sortOrder
       }, 'User links request started');
 
       const links = await this.models.affiliateLink.findByUserId(
         user.id,
-        limitNum,
-        offsetNum
+        limit,
+        offset
       );
 
       const linksWithShortUrls = links.map(link => ({
@@ -123,11 +136,15 @@ export class LinkController {
         originalUrl: link.originalUrl,
         shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${link.hash}`,
         tag: link.tag,
+        amazonTagId: link.amazonTagId,
+        channelId: link.channelId,
+        source: link.source,
         isActive: link.isActive,
         clickCount: link.clickCount,
         uniqueClickCount: link.uniqueClickCount,
         conversionCount: link.conversionCount,
         totalRevenue: link.totalRevenue,
+        expiresAt: link.expiresAt,
         createdAt: link.createdAt,
         updatedAt: link.updatedAt
       }));
@@ -136,13 +153,13 @@ export class LinkController {
         links: linksWithShortUrls
       };
 
-      const pagination = createPagination(limitNum, offsetNum, linksWithShortUrls.length);
+      const pagination = createPagination(limit, offset, linksWithShortUrls.length);
 
       // Log successful links retrieval
       linkLogger.info({ 
         userId: user.id, 
         linkCount: linksWithShortUrls.length,
-        pagination: { limit: limitNum, offset: offsetNum }
+        pagination: { limit, offset }
       }, 'User links retrieved successfully');
       logUtils.performance.requestEnd('GET', '/api/links', Date.now() - startTime, 200);
 
@@ -156,10 +173,11 @@ export class LinkController {
   };
 
   // Get link details by hash
-  getLinkByHash = async (req: AuthRequest, res: Response): Promise<void> => {
+  getLinkByHash = async (req: GetLinkByHashRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
+      // ✅ Hash parameter already validated by Zod middleware
       const { hash } = req.params;
       const user = req.user!;
 
@@ -167,12 +185,6 @@ export class LinkController {
         userId: user.id, 
         linkHash: hash 
       }, 'Link details request started');
-
-      if (!hash) {
-        linkLogger.warn({ userId: user.id }, 'Link details request failed: missing hash parameter');
-        sendValidationError(res, 'Hash parameter is required');
-        return;
-      }
 
       const link = await this.models.affiliateLink.findByHash(hash);
 
@@ -202,11 +214,15 @@ export class LinkController {
           originalUrl: link.originalUrl,
           shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${link.hash}`,
           tag: link.tag,
+          amazonTagId: link.amazonTagId,
+          channelId: link.channelId,
+          source: link.source,
           isActive: link.isActive,
           clickCount: link.clickCount,
           uniqueClickCount: link.uniqueClickCount,
           conversionCount: link.conversionCount,
           totalRevenue: link.totalRevenue,
+          expiresAt: link.expiresAt,
           createdAt: link.createdAt,
           updatedAt: link.updatedAt
         }
@@ -231,10 +247,11 @@ export class LinkController {
   };
 
   // Handle redirect (public endpoint)
-  redirect = async (req: Request, res: Response): Promise<void> => {
+  redirect = async (req: RedirectRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
+      // ✅ Hash parameter already validated by Zod middleware
       const { hash } = req.params;
 
       linkLogger.debug({ 
@@ -242,12 +259,6 @@ export class LinkController {
         ip: req.ip,
         userAgent: req.headers['user-agent']
       }, 'Link redirect request started');
-
-      if (!hash) {
-        linkLogger.warn({ ip: req.ip }, 'Redirect failed: missing hash parameter');
-        sendValidationError(res, 'Hash parameter is required');
-        return;
-      }
 
       // Find the affiliate link
       const link = await this.models.affiliateLink.findByHash(hash);
@@ -260,6 +271,17 @@ export class LinkController {
           isActive: link?.isActive 
         }, 'Redirect failed: link not found or inactive');
         sendNotFoundError(res, 'Link not found or inactive');
+        return;
+      }
+
+      // Check if link has expired
+      if (link.expiresAt && new Date() > link.expiresAt) {
+        linkLogger.warn({ 
+          linkHash: hash,
+          ip: req.ip,
+          expiresAt: link.expiresAt 
+        }, 'Redirect failed: link expired');
+        sendNotFoundError(res, 'Link has expired');
         return;
       }
 
@@ -308,23 +330,22 @@ export class LinkController {
   };
 
   // Get recent links for dashboard
-  getRecentLinks = async (req: AuthRequest, res: Response): Promise<void> => {
+  getRecentLinks = async (req: LinkStatsRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
-      const { limit = '10' } = req.query;
-
-      const limitNum = parseInt(limit as string);
+      // ✅ Query parameters already validated by Zod middleware
+      const { limit } = req.query;
 
       linkLogger.debug({ 
         userId: user.id, 
-        limit: limitNum 
+        limit 
       }, 'Recent links request started');
 
       const links = await this.models.affiliateLink.getRecentLinks(
         user.id,
-        limitNum
+        limit
       );
 
       const linksWithShortUrls = links.map(link => ({
@@ -332,6 +353,9 @@ export class LinkController {
         originalUrl: link.originalUrl,
         shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${link.hash}`,
         tag: link.tag,
+        amazonTagId: link.amazonTagId,
+        channelId: link.channelId,
+        source: link.source,
         clickCount: link.clickCount,
         uniqueClickCount: link.uniqueClickCount,
         conversionCount: link.conversionCount,
@@ -360,30 +384,33 @@ export class LinkController {
   };
 
   // Get top performing links
-  getTopPerformingLinks = async (req: AuthRequest, res: Response): Promise<void> => {
+  getTopPerformingLinks = async (req: LinkStatsRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
-      const { limit = '10' } = req.query;
-
-      const limitNum = parseInt(limit as string);
+      // ✅ Query parameters already validated by Zod middleware
+      const { limit, sortBy = 'revenue' } = req.query;
 
       linkLogger.debug({ 
         userId: user.id, 
-        limit: limitNum 
+        limit,
+        sortBy 
       }, 'Top performing links request started');
 
       const links = await this.models.affiliateLink.getTopPerformingLinks(
         user.id,
-        limitNum
+        limit
       );
 
-      const linksWithShortUrls = links.map(link => ({
+      const linksWithMetrics = links.map(link => ({
         hash: link.hash,
         originalUrl: link.originalUrl,
         shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${link.hash}`,
         tag: link.tag,
+        amazonTagId: link.amazonTagId,
+        channelId: link.channelId,
+        source: link.source,
         clickCount: link.clickCount,
         uniqueClickCount: link.uniqueClickCount,
         conversionCount: link.conversionCount,
@@ -394,15 +421,27 @@ export class LinkController {
         earningsPerClick: link.clickCount > 0 ? link.totalRevenue / link.clickCount : 0
       }));
 
+      // Sort based on validated sortBy parameter
+      if (sortBy === 'conversionRate') {
+        linksWithMetrics.sort((a, b) => b.conversionRate - a.conversionRate);
+      } else if (sortBy === 'clicks') {
+        linksWithMetrics.sort((a, b) => b.clickCount - a.clickCount);
+      } else if (sortBy === 'conversions') {
+        linksWithMetrics.sort((a, b) => b.conversionCount - a.conversionCount);
+      } else {
+        // Default: revenue
+        linksWithMetrics.sort((a, b) => b.totalRevenue - a.totalRevenue);
+      }
+
       const responseData = {
-        topLinks: linksWithShortUrls
+        topLinks: linksWithMetrics
       };
 
       // Log successful top links retrieval with performance insights
-      const totalRevenue = linksWithShortUrls.reduce((sum, link) => sum + link.totalRevenue, 0);
-      const totalClicks = linksWithShortUrls.reduce((sum, link) => sum + link.clickCount, 0);
+      const totalRevenue = linksWithMetrics.reduce((sum, link) => sum + link.totalRevenue, 0);
+      const totalClicks = linksWithMetrics.reduce((sum, link) => sum + link.clickCount, 0);
       
-      logUtils.links.performanceAnalyzed(user.id, linksWithShortUrls.length, totalRevenue / totalClicks || 0);
+      logUtils.links.performanceAnalyzed(user.id, linksWithMetrics.length, totalRevenue / totalClicks || 0);
       logUtils.performance.requestEnd('GET', '/api/links/top-performing', Date.now() - startTime, 200);
 
       sendSuccess(res, responseData);

@@ -1,6 +1,7 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
+import { ValidatedRequest } from '../middleware/validation';
 import { 
   CreateAmazonTagRequest, 
   UpdateAmazonTagRequest,
@@ -16,10 +17,45 @@ import {
   sendNotFoundError,
   sendInternalError
 } from '../utils/responseHelpers';
+import { validationSchemas } from '../schemas';
+import { z } from 'zod';
 
 // ===== 🚀 NEW v1.8.4: STRUCTURED LOGGING WITH PINO =====
 // Create module-specific logger for user operations
 const userLogger = createModuleLogger('user');
+
+// Type definitions for validated requests
+type UpdateProfileRequest = ValidatedRequest<z.infer<typeof validationSchemas.updateProfile>> & AuthRequest;
+type CreateApiKeyRequest = ValidatedRequest<z.infer<typeof validationSchemas.createApiKey>> & AuthRequest;
+type UpdateApiKeyRequest = AuthRequest & {
+  body: z.infer<typeof validationSchemas.updateApiKey>;
+  params: z.infer<typeof validationSchemas.paramKeyId>;
+};
+type DeleteApiKeyRequest = AuthRequest & {
+  params: z.infer<typeof validationSchemas.paramKeyId>;
+};
+type CreateAmazonTagRequestType = ValidatedRequest<z.infer<typeof validationSchemas.createAmazonTag>> & AuthRequest;
+type GetAmazonTagByIdRequest = AuthRequest & {
+  params: z.infer<typeof validationSchemas.paramTagId>;
+};
+type UpdateAmazonTagRequestType = AuthRequest & {
+  body: z.infer<typeof validationSchemas.updateAmazonTag>;
+  params: z.infer<typeof validationSchemas.paramTagId>;
+};
+type DeleteAmazonTagRequest = AuthRequest & {
+  params: z.infer<typeof validationSchemas.paramTagId>;
+};
+type CreateChannelRequestType = ValidatedRequest<z.infer<typeof validationSchemas.createChannel>> & AuthRequest;
+type GetChannelByIdRequest = AuthRequest & {
+  params: z.infer<typeof validationSchemas.paramChannelId>;
+};
+type UpdateChannelRequestType = AuthRequest & {
+  body: z.infer<typeof validationSchemas.updateChannel>;
+  params: z.infer<typeof validationSchemas.paramChannelId>;
+};
+type DeleteChannelRequest = AuthRequest & {
+  params: z.infer<typeof validationSchemas.paramChannelId>;
+};
 
 export class UserController {
   constructor(private models: Models) {
@@ -80,11 +116,12 @@ export class UserController {
   };
 
   // PUT /api/user/me
-  updateProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+  updateProfile = async (req: UpdateProfileRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Data is already validated by Zod middleware (basic format validation)
       const { 
         name, 
         firstName, 
@@ -102,27 +139,7 @@ export class UserController {
         fieldsToUpdate: Object.keys(req.body)
       }, 'Profile update request started');
 
-      // Validazione Amazon Associate Tag (backward compatibility)
-      if (amazonAssociateTag && !/^[a-zA-Z0-9\-]{3,20}$/.test(amazonAssociateTag)) {
-        userLogger.warn({ 
-          userId: user.id, 
-          amazonAssociateTag 
-        }, 'Profile update failed: invalid Amazon Associate Tag format');
-        sendValidationError(res, 'Invalid Amazon Associate Tag format');
-        return;
-      }
-
-      // Validazione URL
-      if (websiteUrl && !this.isValidUrl(websiteUrl)) {
-        userLogger.warn({ 
-          userId: user.id, 
-          websiteUrl 
-        }, 'Profile update failed: invalid website URL format');
-        sendValidationError(res, 'Invalid website URL format');
-        return;
-      }
-
-      // ✨ NEW v1.8.x: Validate default IDs exist
+      // ✨ NEW v1.8.x: Validate default IDs exist (business logic validation)
       if (defaultAmazonTagId) {
         const tag = await this.models.user.getAmazonTagById(user.id, defaultAmazonTagId);
         if (!tag) {
@@ -157,12 +174,6 @@ export class UserController {
       if (companyName !== undefined) updateData.companyName = companyName;
       if (defaultAmazonTagId !== undefined) updateData.defaultAmazonTagId = defaultAmazonTagId;
       if (defaultChannelId !== undefined) updateData.defaultChannelId = defaultChannelId;
-
-      if (Object.keys(updateData).length === 0) {
-        userLogger.warn({ userId: user.id }, 'Profile update failed: no valid fields to update');
-        sendValidationError(res, 'No valid fields to update');
-        return;
-      }
 
       const updatedUser = await this.models.user.updateById(user.id, updateData);
 
@@ -211,11 +222,12 @@ export class UserController {
   };
 
   // POST /api/user/keys
-  createApiKey = async (req: AuthRequest, res: Response): Promise<void> => {
+  createApiKey = async (req: CreateApiKeyRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Data is already validated by Zod middleware
       const { name } = req.body;
 
       userLogger.debug({ 
@@ -224,13 +236,7 @@ export class UserController {
         currentKeyCount: user.apiKeys.length
       }, 'API key creation request started');
 
-      if (!name || name.trim().length === 0) {
-        userLogger.warn({ userId: user.id }, 'API key creation failed: missing name');
-        sendValidationError(res, 'API key name is required');
-        return;
-      }
-
-      // Controlla limite API keys (max 10 per utente)
+      // Business logic validation - check limit (max 10 per user)
       if (user.apiKeys.length >= 10) {
         userLogger.warn({ 
           userId: user.id, 
@@ -240,21 +246,21 @@ export class UserController {
         return;
       }
 
-      // Genera nuova API key
-      const apiKey = await this.models.user.generateApiKey(user.id, name.trim());
+      // Generate new API key
+      const apiKey = await this.models.user.generateApiKey(user.id, name);
 
       const responseData = {
         apiKey: {
           id: apiKey.id,
           name: apiKey.name,
-          key: `ak_${apiKey.keyHash}`, // Mostra la chiave solo una volta
+          key: `ak_${apiKey.keyHash}`, // Show key only once
           isActive: apiKey.isActive,
           createdAt: apiKey.createdAt
         }
       };
 
       // Log successful API key creation
-      logUtils.users.apiKeyCreated(user.id, name.trim(), ['basic']);
+      logUtils.users.apiKeyCreated(user.id, name, ['basic']);
       logUtils.performance.requestEnd('POST', '/api/user/keys', Date.now() - startTime, 201);
 
       sendSuccess(res, responseData, {
@@ -281,13 +287,13 @@ export class UserController {
         keyCount: user.apiKeys.length
       }, 'API keys list request started');
 
-      const apiKeys = user.apiKeys.map(key => ({
+      const apiKeys = user.apiKeys.map((key: any) => ({
         id: key.id,
         name: key.name,
         isActive: key.isActive,
         lastUsedAt: key.lastUsedAt,
         createdAt: key.createdAt,
-        keyPreview: `ak_****${key.keyHash.slice(-4)}` // Mostra solo ultimi 4 caratteri
+        keyPreview: `ak_****${key.keyHash.slice(-4)}` // Show only last 4 chars
       }));
 
       const responseData = {
@@ -298,7 +304,7 @@ export class UserController {
       userLogger.info({ 
         userId: user.id, 
         keyCount: apiKeys.length,
-        activeKeys: apiKeys.filter(k => k.isActive).length
+        activeKeys: apiKeys.filter((k: any) => k.isActive).length
       }, 'API keys retrieved successfully');
       logUtils.performance.requestEnd('GET', '/api/user/keys', Date.now() - startTime, 200);
 
@@ -312,11 +318,12 @@ export class UserController {
   };
 
   // PATCH /api/user/keys/:keyId
-  updateApiKey = async (req: AuthRequest, res: Response): Promise<void> => {
+  updateApiKey = async (req: UpdateApiKeyRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters and body already validated by Zod middleware
       const { keyId } = req.params;
       const { name, isActive } = req.body;
 
@@ -326,13 +333,7 @@ export class UserController {
         updateFields: { name: !!name, isActive }
       }, 'API key update request started');
 
-      if (!keyId) {
-        userLogger.warn({ userId: user.id }, 'API key update failed: missing key ID');
-        sendValidationError(res, 'Key ID is required');
-        return;
-      }
-
-      // Trova l'API key
+      // Find the API key
       const apiKeyIndex = user.apiKeys.findIndex(key => key.id === keyId);
       if (apiKeyIndex === -1) {
         userLogger.warn({ 
@@ -343,19 +344,10 @@ export class UserController {
         return;
       }
 
-      // Prepara i dati di aggiornamento
+      // Prepare update data
       const updateData: any = {};
-      if (name !== undefined) updateData[`apiKeys.${apiKeyIndex}.name`] = name.trim();
+      if (name !== undefined) updateData[`apiKeys.${apiKeyIndex}.name`] = name;
       if (isActive !== undefined) updateData[`apiKeys.${apiKeyIndex}.isActive`] = isActive;
-
-      if (Object.keys(updateData).length === 0) {
-        userLogger.warn({ 
-          userId: user.id, 
-          keyId 
-        }, 'API key update failed: no valid fields to update');
-        sendValidationError(res, 'No valid fields to update');
-        return;
-      }
 
       const updatedUser = await this.models.user.updateById(user.id, updateData);
 
@@ -401,11 +393,12 @@ export class UserController {
   };
 
   // DELETE /api/user/keys/:keyId
-  deleteApiKey = async (req: AuthRequest, res: Response): Promise<void> => {
+  deleteApiKey = async (req: DeleteApiKeyRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters already validated by Zod middleware
       const { keyId } = req.params;
 
       userLogger.debug({ 
@@ -413,13 +406,7 @@ export class UserController {
         keyId 
       }, 'API key deletion request started');
 
-      if (!keyId) {
-        userLogger.warn({ userId: user.id }, 'API key deletion failed: missing key ID');
-        sendValidationError(res, 'Key ID is required');
-        return;
-      }
-
-      // Verifica che l'API key esista
+      // Verify API key exists
       const apiKeyExists = user.apiKeys.some(key => key.id === keyId);
       if (!apiKeyExists) {
         userLogger.warn({ 
@@ -459,11 +446,12 @@ export class UserController {
   // ===== ✨ NEW v1.8.x: AMAZON TAGS ENDPOINTS =====
 
   // POST /api/user/amazon-tags
-  createAmazonTag = async (req: AuthRequest, res: Response): Promise<void> => {
+  createAmazonTag = async (req: CreateAmazonTagRequestType, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Data is already validated by Zod middleware
       const tagData: CreateAmazonTagRequest = req.body;
 
       userLogger.debug({ 
@@ -566,23 +554,18 @@ export class UserController {
   };
 
   // GET /api/user/amazon-tags/:tagId
-  getAmazonTagById = async (req: AuthRequest, res: Response): Promise<void> => {
+  getAmazonTagById = async (req: GetAmazonTagByIdRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters already validated by Zod middleware
       const { tagId } = req.params;
 
       userLogger.debug({ 
         userId: user.id, 
         tagId 
       }, 'Amazon tag details request started');
-
-      if (!tagId) {
-        userLogger.warn({ userId: user.id }, 'Amazon tag request failed: missing tag ID');
-        sendValidationError(res, 'Tag ID is required');
-        return;
-      }
 
       const amazonTag = await this.models.user.getAmazonTagById(user.id, tagId);
 
@@ -635,11 +618,12 @@ export class UserController {
   };
 
   // PATCH /api/user/amazon-tags/:tagId
-  updateAmazonTag = async (req: AuthRequest, res: Response): Promise<void> => {
+  updateAmazonTag = async (req: UpdateAmazonTagRequestType, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters and body already validated by Zod middleware
       const { tagId } = req.params;
       const updates: UpdateAmazonTagRequest = req.body;
 
@@ -648,12 +632,6 @@ export class UserController {
         tagId,
         updateFields: Object.keys(updates)
       }, 'Amazon tag update request started');
-
-      if (!tagId) {
-        userLogger.warn({ userId: user.id }, 'Amazon tag update failed: missing tag ID');
-        sendValidationError(res, 'Tag ID is required');
-        return;
-      }
 
       const updatedTag = await this.models.user.updateAmazonTag(user.id, tagId, updates);
 
@@ -708,23 +686,18 @@ export class UserController {
   };
 
   // DELETE /api/user/amazon-tags/:tagId
-  deleteAmazonTag = async (req: AuthRequest, res: Response): Promise<void> => {
+  deleteAmazonTag = async (req: DeleteAmazonTagRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters already validated by Zod middleware
       const { tagId } = req.params;
 
       userLogger.debug({ 
         userId: user.id, 
         tagId 
       }, 'Amazon tag deletion request started');
-
-      if (!tagId) {
-        userLogger.warn({ userId: user.id }, 'Amazon tag deletion failed: missing tag ID');
-        sendValidationError(res, 'Tag ID is required');
-        return;
-      }
 
       const deleted = await this.models.user.deleteAmazonTag(user.id, tagId);
 
@@ -758,11 +731,12 @@ export class UserController {
   // ===== ✨ NEW v1.8.x: CHANNELS ENDPOINTS =====
 
   // POST /api/user/channels
-  createChannel = async (req: AuthRequest, res: Response): Promise<void> => {
+  createChannel = async (req: CreateChannelRequestType, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Data is already validated by Zod middleware
       const channelData: CreateChannelRequest = req.body;
 
       userLogger.debug({ 
@@ -878,23 +852,18 @@ export class UserController {
   };
 
   // GET /api/user/channels/:channelId
-  getChannelById = async (req: AuthRequest, res: Response): Promise<void> => {
+  getChannelById = async (req: GetChannelByIdRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters already validated by Zod middleware
       const { channelId } = req.params;
 
       userLogger.debug({ 
         userId: user.id, 
         channelId 
       }, 'Channel details request started');
-
-      if (!channelId) {
-        userLogger.warn({ userId: user.id }, 'Channel request failed: missing channel ID');
-        sendValidationError(res, 'Channel ID is required');
-        return;
-      }
 
       const channel = await this.models.user.getChannelById(user.id, channelId);
 
@@ -953,11 +922,12 @@ export class UserController {
   };
 
   // PATCH /api/user/channels/:channelId
-  updateChannel = async (req: AuthRequest, res: Response): Promise<void> => {
+  updateChannel = async (req: UpdateChannelRequestType, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters and body already validated by Zod middleware
       const { channelId } = req.params;
       const updates: UpdateChannelRequest = req.body;
 
@@ -966,12 +936,6 @@ export class UserController {
         channelId,
         updateFields: Object.keys(updates)
       }, 'Channel update request started');
-
-      if (!channelId) {
-        userLogger.warn({ userId: user.id }, 'Channel update failed: missing channel ID');
-        sendValidationError(res, 'Channel ID is required');
-        return;
-      }
 
       const updatedChannel = await this.models.user.updateChannel(user.id, channelId, updates);
 
@@ -1032,23 +996,18 @@ export class UserController {
   };
 
   // DELETE /api/user/channels/:channelId
-  deleteChannel = async (req: AuthRequest, res: Response): Promise<void> => {
+  deleteChannel = async (req: DeleteChannelRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Parameters already validated by Zod middleware
       const { channelId } = req.params;
 
       userLogger.debug({ 
         userId: user.id, 
         channelId 
       }, 'Channel deletion request started');
-
-      if (!channelId) {
-        userLogger.warn({ userId: user.id }, 'Channel deletion failed: missing channel ID');
-        sendValidationError(res, 'Channel ID is required');
-        return;
-      }
 
       const deleted = await this.models.user.deleteChannel(user.id, channelId);
 
@@ -1081,7 +1040,7 @@ export class UserController {
 
   // ===== UTILITY METHODS =====
 
-  // Utility function per validare URL
+  // Utility function to validate URL
   private isValidUrl(url: string): boolean {
     try {
       new URL(url);

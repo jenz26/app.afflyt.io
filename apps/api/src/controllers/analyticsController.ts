@@ -1,16 +1,30 @@
 import { Response } from 'express';
 import { Models } from '../models';
 import { AuthRequest } from '../middleware/auth';
+import { ValidatedRequest } from '../middleware/validation';
 import { AnalyticsSummary, TrendDataPoint, DistributionDataPoint } from '../types';
 import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
   sendSuccess,
   sendInternalError
 } from '../utils/responseHelpers';
+import { validationSchemas } from '../schemas';
+import { z } from 'zod';
 
 // ===== 🚀 NEW v1.8.4: STRUCTURED LOGGING WITH PINO =====
 // Create module-specific logger for analytics operations
 const analyticsLogger = createModuleLogger('analytics');
+
+// Type definitions for validated requests
+type AnalyticsQueryRequest = AuthRequest & {
+  query: z.infer<typeof validationSchemas.analyticsQuery>;
+};
+type TopLinksQueryRequest = AuthRequest & {
+  query: z.infer<typeof validationSchemas.topLinksQuery>;
+};
+type HeatmapQueryRequest = AuthRequest & {
+  query: z.infer<typeof validationSchemas.heatmapQuery>;
+};
 
 export class AnalyticsController {
   constructor(private models: Models) {
@@ -18,11 +32,12 @@ export class AnalyticsController {
   }
 
   // GET /api/user/analytics/summary
-  getSummary = async (req: AuthRequest, res: Response): Promise<void> => {
+  getSummary = async (req: AnalyticsQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
       const { startDate, endDate } = req.query;
 
       analyticsLogger.debug({ 
@@ -31,9 +46,9 @@ export class AnalyticsController {
         endDate 
       }, 'Analytics summary request started');
 
-      // Default: ultimo mese
-      const end = endDate ? new Date(endDate as string) : new Date();
-      const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      // Default: last month
+      const end = endDate ? new Date(endDate) : new Date();
+      const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
       // Get basic stats from affiliate links
       const linkStats = await this.models.affiliateLink.getUserStats(user.id);
@@ -80,14 +95,15 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/clicks-trend
-  getClicksTrend = async (req: AuthRequest, res: Response): Promise<void> => {
+  getClicksTrend = async (req: AnalyticsQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
       const { 
-        period = '7d', 
-        granularity = 'daily',
+        period, 
+        granularity,
         linkId,
         subId 
       } = req.query;
@@ -100,12 +116,12 @@ export class AnalyticsController {
         subId 
       }, 'Clicks trend request started');
 
-      const days = this.parsePeriod(period as string);
+      const days = this.parsePeriod(period);
       const trend = await this.models.click.getClicksTrend(user.id, days);
 
       const responseData = { trend };
 
-      logUtils.analytics.trendGenerated(user.id, 'clicks', period as string, trend.length);
+      logUtils.analytics.trendGenerated(user.id, 'clicks', period, trend.length);
       logUtils.performance.requestEnd('GET', '/api/user/analytics/clicks-trend', Date.now() - startTime, 200);
 
       sendSuccess(res, responseData);
@@ -118,14 +134,15 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/revenue-trend
-  getRevenueTrend = async (req: AuthRequest, res: Response): Promise<void> => {
+  getRevenueTrend = async (req: AnalyticsQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
       const { 
-        period = '7d', 
-        granularity = 'daily',
+        period, 
+        granularity,
         linkId,
         subId 
       } = req.query;
@@ -138,7 +155,7 @@ export class AnalyticsController {
         subId 
       }, 'Revenue trend request started');
 
-      const days = this.parsePeriod(period as string);
+      const days = this.parsePeriod(period);
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
       const endDate = new Date();
 
@@ -151,7 +168,7 @@ export class AnalyticsController {
 
       const responseData = { trend };
 
-      logUtils.analytics.trendGenerated(user.id, 'revenue', period as string, trend.length);
+      logUtils.analytics.trendGenerated(user.id, 'revenue', period, trend.length);
       logUtils.performance.requestEnd('GET', '/api/user/analytics/revenue-trend', Date.now() - startTime, 200);
 
       sendSuccess(res, responseData);
@@ -164,12 +181,13 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/distribution/geo
-  getGeoDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+  getGeoDistribution = async (req: AnalyticsQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
-      const { startDate, endDate, linkId, subId, groupBy = 'country' } = req.query;
+      // ✅ Query parameters already validated by Zod middleware
+      const { startDate, endDate, linkId, subId, groupBy } = req.query;
 
       analyticsLogger.debug({ 
         userId: user.id, 
@@ -197,11 +215,12 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/distribution/device
-  getDeviceDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+  getDeviceDistribution = async (req: AnalyticsQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
       const { startDate, endDate, linkId, subId } = req.query;
 
       analyticsLogger.debug({ 
@@ -229,7 +248,7 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/distribution/browser
-  getBrowserDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+  getBrowserDistribution = async (req: AnalyticsQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
@@ -237,7 +256,7 @@ export class AnalyticsController {
       
       analyticsLogger.debug({ userId: user.id }, 'Browser distribution request started (mock data)');
       
-      // Per ora restituiamo dati mock, implementeremo la logica nel click model più avanti
+      // For now return mock data, we'll implement logic in click model later
       const distribution = [
         { label: 'Chrome', value: 45, percentage: 65.2 },
         { label: 'Safari', value: 15, percentage: 21.7 },
@@ -260,7 +279,7 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/distribution/referer
-  getRefererDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+  getRefererDistribution = async (req: AnalyticsQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
@@ -268,7 +287,7 @@ export class AnalyticsController {
       
       analyticsLogger.debug({ userId: user.id }, 'Referer distribution request started (mock data)');
       
-      // Per ora restituiamo dati mock
+      // For now return mock data
       const distribution = [
         { label: 'Telegram', value: 35, percentage: 42.2 },
         { label: 'Instagram', value: 20, percentage: 24.1 },
@@ -292,7 +311,7 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/distribution/subid
-  getSubIdDistribution = async (req: AuthRequest, res: Response): Promise<void> => {
+  getSubIdDistribution = async (req: AnalyticsQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
@@ -300,7 +319,7 @@ export class AnalyticsController {
       
       analyticsLogger.debug({ userId: user.id }, 'SubID distribution request started (mock data)');
       
-      // Per ora restituiamo dati mock
+      // For now return mock data
       const distribution = [
         { label: 'telegram_channel_main', value: 25, percentage: 35.7 },
         { label: 'instagram_story', value: 18, percentage: 25.7 },
@@ -324,12 +343,13 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/hourly-heatmap
-  getHourlyHeatmap = async (req: AuthRequest, res: Response): Promise<void> => {
+  getHourlyHeatmap = async (req: HeatmapQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
-      const { period = '7d', startDate, endDate } = req.query;
+      // ✅ Query parameters already validated by Zod middleware
+      const { period, startDate, endDate } = req.query;
 
       analyticsLogger.debug({ 
         userId: user.id, 
@@ -341,9 +361,9 @@ export class AnalyticsController {
       // Calculate date range
       let dateFilter: Date;
       if (startDate && endDate) {
-        dateFilter = new Date(startDate as string);
+        dateFilter = new Date(startDate);
       } else {
-        const days = this.parsePeriod(period as string);
+        const days = this.parsePeriod(period);
         dateFilter = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
       }
 
@@ -398,7 +418,7 @@ export class AnalyticsController {
         maxClicks,
         peakHour,
         peakDay,
-        period: period as string,
+        period,
         dateRange: {
           startDate: dateFilter.toISOString(),
           endDate: new Date().toISOString()
@@ -419,14 +439,15 @@ export class AnalyticsController {
   };
 
   // GET /api/user/analytics/top-performing-links
-  getTopPerformingLinks = async (req: AuthRequest, res: Response): Promise<void> => {
+  getTopPerformingLinks = async (req: TopLinksQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
       const { 
-        sortBy = 'revenue', 
-        limit = '10',
+        sortBy, 
+        limit,
         startDate,
         endDate 
       } = req.query;
@@ -441,7 +462,7 @@ export class AnalyticsController {
 
       const links = await this.models.affiliateLink.getTopPerformingLinks(
         user.id,
-        parseInt(limit as string)
+        limit
       );
 
       const linksWithMetrics = links.map(link => ({
@@ -458,11 +479,15 @@ export class AnalyticsController {
         createdAt: link.createdAt
       }));
 
-      // Ordina in base al parametro sortBy
+      // Sort based on validated sortBy parameter
       if (sortBy === 'conversionRate') {
         linksWithMetrics.sort((a, b) => b.conversionRate - a.conversionRate);
       } else if (sortBy === 'earningsPerClick') {
         linksWithMetrics.sort((a, b) => b.earningsPerClick - a.earningsPerClick);
+      } else if (sortBy === 'clicks') {
+        linksWithMetrics.sort((a, b) => b.clickCount - a.clickCount);
+      } else if (sortBy === 'conversions') {
+        linksWithMetrics.sort((a, b) => b.conversionCount - a.conversionCount);
       } else {
         // Default: revenue
         linksWithMetrics.sort((a, b) => b.totalRevenue - a.totalRevenue);
@@ -470,7 +495,7 @@ export class AnalyticsController {
 
       const responseData = { topLinks: linksWithMetrics };
 
-      logUtils.analytics.topLinksGenerated(user.id, sortBy as string, linksWithMetrics.length);
+      logUtils.analytics.topLinksGenerated(user.id, sortBy, linksWithMetrics.length);
       logUtils.performance.requestEnd('GET', '/api/user/analytics/top-performing-links', Date.now() - startTime, 200);
 
       sendSuccess(res, responseData);
@@ -482,7 +507,7 @@ export class AnalyticsController {
     }
   };
 
-  // Utility function per parsare il periodo
+  // Utility function to parse period
   private parsePeriod(period: string): number {
     switch (period) {
       case '24h': return 1;

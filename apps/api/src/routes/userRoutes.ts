@@ -5,6 +5,8 @@ import { DashboardController } from '../controllers/dashboardController';
 import { AnalyticsController } from '../controllers/analyticsController';
 import { ConversionController } from '../controllers/conversionController';
 import { authenticateJWT } from '../middleware/auth';
+import { validateBody, validateParams, validateQuery } from '../middleware/validation';
+import { validationSchemas } from '../schemas';
 
 export const createUserRoutes = (models: Models): Router => {
   const router = Router();
@@ -13,18 +15,32 @@ export const createUserRoutes = (models: Models): Router => {
   const analyticsController = new AnalyticsController(models);
   const conversionController = new ConversionController(models);
 
-  // Applica autenticazione JWT a tutte le routes user
+  // ===== 🔒 v1.8.5: ZOD VALIDATION + JWT AUTHENTICATION =====
+  // Apply JWT authentication to all user routes
   router.use(authenticateJWT(models));
 
   // ===== USER PROFILE MANAGEMENT =====
   router.get('/me', userController.getProfile);
-  router.put('/me', userController.updateProfile);
+  router.put('/me', 
+    validateBody(validationSchemas.updateProfile), 
+    userController.updateProfile
+  );
 
   // ===== API KEYS MANAGEMENT =====
-  router.post('/keys', userController.createApiKey);
+  router.post('/keys', 
+    validateBody(validationSchemas.createApiKey), 
+    userController.createApiKey
+  );
   router.get('/keys', userController.getApiKeys);
-  router.patch('/keys/:keyId', userController.updateApiKey);
-  router.delete('/keys/:keyId', userController.deleteApiKey);
+  router.patch('/keys/:keyId', 
+    validateParams(validationSchemas.paramKeyId),
+    validateBody(validationSchemas.updateApiKey), 
+    userController.updateApiKey
+  );
+  router.delete('/keys/:keyId', 
+    validateParams(validationSchemas.paramKeyId),
+    userController.deleteApiKey
+  );
 
   // ===== ✨ NEW v1.8.x: AMAZON TAGS MANAGEMENT =====
   /**
@@ -144,7 +160,10 @@ export const createUserRoutes = (models: Models): Router => {
    *                 timestamp:
    *                   type: string
    */
-  router.post('/amazon-tags', userController.createAmazonTag);
+  router.post('/amazon-tags', 
+    validateBody(validationSchemas.createAmazonTag), 
+    userController.createAmazonTag
+  );
   router.get('/amazon-tags', userController.getAmazonTags);
 
   /**
@@ -216,9 +235,19 @@ export const createUserRoutes = (models: Models): Router => {
    *       404:
    *         description: Amazon tag not found
    */
-  router.get('/amazon-tags/:tagId', userController.getAmazonTagById);
-  router.patch('/amazon-tags/:tagId', userController.updateAmazonTag);
-  router.delete('/amazon-tags/:tagId', userController.deleteAmazonTag);
+  router.get('/amazon-tags/:tagId', 
+    validateParams(validationSchemas.paramTagId),
+    userController.getAmazonTagById
+  );
+  router.patch('/amazon-tags/:tagId', 
+    validateParams(validationSchemas.paramTagId),
+    validateBody(validationSchemas.updateAmazonTag), 
+    userController.updateAmazonTag
+  );
+  router.delete('/amazon-tags/:tagId', 
+    validateParams(validationSchemas.paramTagId),
+    userController.deleteAmazonTag
+  );
 
   // ===== ✨ NEW v1.8.x: CHANNELS MANAGEMENT =====
   /**
@@ -349,7 +378,10 @@ export const createUserRoutes = (models: Models): Router => {
    *                 timestamp:
    *                   type: string
    */
-  router.post('/channels', userController.createChannel);
+  router.post('/channels', 
+    validateBody(validationSchemas.createChannel), 
+    userController.createChannel
+  );
   router.get('/channels', userController.getChannels);
 
   /**
@@ -429,46 +461,102 @@ export const createUserRoutes = (models: Models): Router => {
    *       404:
    *         description: Channel not found
    */
-  router.get('/channels/:channelId', userController.getChannelById);
-  router.patch('/channels/:channelId', userController.updateChannel);
-  router.delete('/channels/:channelId', userController.deleteChannel);
+  router.get('/channels/:channelId', 
+    validateParams(validationSchemas.paramChannelId),
+    userController.getChannelById
+  );
+  router.patch('/channels/:channelId', 
+    validateParams(validationSchemas.paramChannelId),
+    validateBody(validationSchemas.updateChannel), 
+    userController.updateChannel
+  );
+  router.delete('/channels/:channelId', 
+    validateParams(validationSchemas.paramChannelId),
+    userController.deleteChannel
+  );
 
   // ===== DASHBOARD LAYOUT MANAGEMENT =====
   router.get('/dashboard-layout', dashboardController.getDashboardLayout);
-  router.put('/dashboard-layout', dashboardController.updateDashboardLayout);
+  router.put('/dashboard-layout', 
+    validateBody(validationSchemas.updateDashboardLayout), 
+    dashboardController.updateDashboardLayout
+  );
 
   // ===== ANALYTICS ENDPOINTS =====
-  router.get('/analytics/summary', analyticsController.getSummary);
-  router.get('/analytics/clicks-trend', analyticsController.getClicksTrend);
-  router.get('/analytics/revenue-trend', analyticsController.getRevenueTrend);
-  router.get('/analytics/distribution/geo', analyticsController.getGeoDistribution);
-  router.get('/analytics/distribution/device', analyticsController.getDeviceDistribution);
-  router.get('/analytics/distribution/browser', analyticsController.getBrowserDistribution);
-  router.get('/analytics/distribution/referer', analyticsController.getRefererDistribution);
-  router.get('/analytics/distribution/subid', analyticsController.getSubIdDistribution);
-  router.get('/analytics/top-performing-links', analyticsController.getTopPerformingLinks);
-  router.get('/analytics/hourly-heatmap', analyticsController.getHourlyHeatmap);
+  router.get('/analytics/summary', 
+    validateQuery(validationSchemas.analyticsQuery), 
+    analyticsController.getSummary
+  );
+  router.get('/analytics/clicks-trend', 
+    validateQuery(validationSchemas.analyticsQuery), 
+    analyticsController.getClicksTrend
+  );
+  router.get('/analytics/revenue-trend', 
+    validateQuery(validationSchemas.analyticsQuery), 
+    analyticsController.getRevenueTrend
+  );
+  router.get('/analytics/distribution/geo', 
+    validateQuery(validationSchemas.analyticsQuery), 
+    analyticsController.getGeoDistribution
+  );
+  router.get('/analytics/distribution/device', 
+    validateQuery(validationSchemas.analyticsQuery), 
+    analyticsController.getDeviceDistribution
+  );
+  router.get('/analytics/distribution/browser', 
+    validateQuery(validationSchemas.analyticsQuery), 
+    analyticsController.getBrowserDistribution
+  );
+  router.get('/analytics/distribution/referer', 
+    validateQuery(validationSchemas.analyticsQuery), 
+    analyticsController.getRefererDistribution
+  );
+  router.get('/analytics/distribution/subid', 
+    validateQuery(validationSchemas.analyticsQuery), 
+    analyticsController.getSubIdDistribution
+  );
+  router.get('/analytics/top-performing-links', 
+    validateQuery(validationSchemas.topLinksQuery), 
+    analyticsController.getTopPerformingLinks
+  );
+  router.get('/analytics/hourly-heatmap', 
+    validateQuery(validationSchemas.heatmapQuery), 
+    analyticsController.getHourlyHeatmap
+  );
 
   // ===== USER LINKS MANAGEMENT =====
   // Note: These endpoints maintain backward compatibility while we transition
-  router.get('/links', async (req, res) => {
-    // Redirect to existing linkController for now, we'll update this
-    // This maintains backward compatibility while we transition
-    const linkController = require('../controllers/linkController').LinkController;
-    const controller = new linkController(models);
-    return controller.getLinks(req, res);
-  });
+  router.get('/links', 
+    validateQuery(validationSchemas.getLinks), 
+    async (req, res) => {
+      // Redirect to existing linkController for now, we'll update this
+      // This maintains backward compatibility while we transition
+      const linkController = require('../controllers/linkController').LinkController;
+      const controller = new linkController(models);
+      return controller.getLinks(req, res);
+    }
+  );
 
-  router.get('/links/:hash', async (req, res) => {
-    const linkController = require('../controllers/linkController').LinkController;
-    const controller = new linkController(models);
-    return controller.getLinkByHash(req, res);
-  });
+  router.get('/links/:hash', 
+    validateParams(validationSchemas.paramHash),
+    async (req, res) => {
+      const linkController = require('../controllers/linkController').LinkController;
+      const controller = new linkController(models);
+      return controller.getLinkByHash(req, res);
+    }
+  );
 
   // ===== CONVERSIONS MANAGEMENT =====
-  router.get('/conversions', conversionController.getUserConversions);
+  router.get('/conversions', 
+    validateQuery(validationSchemas.userConversionsQuery), 
+    conversionController.getUserConversions
+  );
   router.get('/conversions/stats', conversionController.getConversionStats);
-  router.patch('/conversions/:conversionId', conversionController.updateConversionStatus);
+  router.patch('/conversions/:conversionId', 
+    validateParams(validationSchemas.paramConversionId),
+    validateBody(validationSchemas.updateConversion), 
+    conversionController.updateConversionStatus
+  );
 
   return router;
 };

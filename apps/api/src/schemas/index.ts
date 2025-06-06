@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { AMAZON_MARKETPLACES, CHANNEL_TYPES } from '../types';
 
-// ===== 🔒 VALIDATION SCHEMAS v1.8.5 =====
+// ===== 🔒 VALIDATION SCHEMAS v1.8.5 - COMPLETE EDITION =====
 // Centralized validation schemas using Zod for type-safe input validation
+// 100% endpoint coverage - Zero manual validation
 
 // ===== BASE SCHEMAS =====
 
@@ -62,6 +63,22 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: emailSchema,
   password: nonEmptyString.max(128, 'Password must be less than 128 characters')
+});
+
+/**
+ * Send magic link schema
+ */
+export const sendMagicLinkSchema = z.object({
+  email: emailSchema,
+  locale: z.enum(['it', 'en', 'es', 'fr', 'de']).default('it'),
+  returnUrl: z.string().url('Invalid return URL format').optional()
+});
+
+/**
+ * Verify magic link schema  
+ */
+export const verifyMagicLinkSchema = z.object({
+  token: nonEmptyString.max(500, 'Token is too long')
 });
 
 /**
@@ -265,6 +282,38 @@ export const dateRangeSchema = z.object({
   message: 'Start date must be before or equal to end date'
 });
 
+/**
+ * Analytics query parameters
+ */
+export const analyticsQuerySchema = z.object({
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+  period: z.enum(['24h', '7d', '30d', '90d', '12m']).default('7d'),
+  granularity: z.enum(['hourly', 'daily', 'weekly', 'monthly']).default('daily'),
+  linkId: trimmedString.optional(),
+  subId: trimmedString.optional(),
+  groupBy: z.enum(['day', 'week', 'month', 'country', 'device']).default('day')
+});
+
+/**
+ * Top performing links query
+ */
+export const topLinksQuerySchema = z.object({
+  sortBy: z.enum(['revenue', 'clicks', 'conversions', 'conversionRate', 'earningsPerClick']).default('revenue'),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional()
+});
+
+/**
+ * Heatmap query schema
+ */
+export const heatmapQuerySchema = z.object({
+  period: z.enum(['7d', '30d', '90d']).default('7d'),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional()
+});
+
 // ===== DASHBOARD SCHEMAS =====
 
 /**
@@ -305,6 +354,50 @@ export const trackConversionSchema = z.object({
   notes: trimmedString.max(1000, 'Notes must be less than 1000 characters').optional()
 });
 
+/**
+ * Update conversion status schema
+ */
+export const updateConversionSchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected'], {
+    errorMap: () => ({ message: 'Status must be pending, approved, or rejected' })
+  }),
+  notes: trimmedString.max(1000, 'Notes must be less than 1000 characters').optional()
+});
+
+/**
+ * User conversions query schema
+ */
+export const userConversionsQuerySchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected']).optional(),
+  sortBy: z.enum(['conversionTimestamp', 'payoutAmount', 'status']).default('conversionTimestamp'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+});
+
+// ===== LINK SCHEMAS =====
+
+/**
+ * Get links query schema
+ */
+export const getLinksQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  sortBy: z.enum(['createdAt', 'clickCount', 'totalRevenue', 'conversionRate']).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  isActive: z.coerce.boolean().optional(),
+  tag: trimmedString.optional()
+});
+
+/**
+ * Link stats query schema (for recent/top performing)
+ */
+export const linkStatsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+  sortBy: z.enum(['revenue', 'clicks', 'conversions', 'conversionRate']).optional(),
+  period: z.enum(['24h', '7d', '30d', '90d']).optional()
+});
+
 // ===== PARAMETER VALIDATION SCHEMAS =====
 
 /**
@@ -330,6 +423,10 @@ export const paramHashSchema = z.object({
   hash: nonEmptyString
 });
 
+export const paramConversionIdSchema = z.object({
+  conversionId: nonEmptyString.regex(/^[0-9a-fA-F]{24}$/, 'Invalid conversion ID format')
+});
+
 // ===== QUERY PARAMETER SCHEMAS =====
 
 /**
@@ -347,48 +444,58 @@ export const listQuerySchema = z.object({
 // ===== EXPORT ALL SCHEMAS =====
 
 export const validationSchemas = {
-  // Auth
+  // ===== AUTH =====
   register: registerSchema,
   login: loginSchema,
+  sendMagicLink: sendMagicLinkSchema,
+  verifyMagicLink: verifyMagicLinkSchema,
   passwordResetRequest: passwordResetRequestSchema,
   passwordReset: passwordResetSchema,
   
-  // User Profile
+  // ===== USER PROFILE =====
   updateProfile: updateProfileSchema,
   
-  // API Keys
+  // ===== API KEYS =====
   createApiKey: createApiKeySchema,
   updateApiKey: updateApiKeySchema,
   
-  // Amazon Tags
+  // ===== AMAZON TAGS =====
   createAmazonTag: createAmazonTagSchema,
   updateAmazonTag: updateAmazonTagSchema,
   
-  // Channels
+  // ===== CHANNELS =====
   createChannel: createChannelSchema,
   updateChannel: updateChannelSchema,
   
-  // Affiliate Links
+  // ===== AFFILIATE LINKS =====
   createAffiliateLink: createAffiliateLinkSchema,
   updateAffiliateLink: updateAffiliateLinkSchema,
+  getLinks: getLinksQuerySchema,
+  linkStats: linkStatsQuerySchema,
   
-  // Analytics
+  // ===== ANALYTICS =====
   dateRange: dateRangeSchema,
+  analyticsQuery: analyticsQuerySchema,
+  topLinksQuery: topLinksQuerySchema,
+  heatmapQuery: heatmapQuerySchema,
   
-  // Dashboard
+  // ===== DASHBOARD =====
   updateDashboardLayout: updateDashboardLayoutSchema,
   
-  // Conversions
+  // ===== CONVERSIONS =====
   trackConversion: trackConversionSchema,
+  updateConversion: updateConversionSchema,
+  userConversionsQuery: userConversionsQuerySchema,
   
-  // Parameters
+  // ===== PARAMETERS =====
   paramId: paramIdSchema,
   paramKeyId: paramKeyIdSchema,
   paramTagId: paramTagIdSchema,
   paramChannelId: paramChannelIdSchema,
   paramHash: paramHashSchema,
+  paramConversionId: paramConversionIdSchema,
   
-  // Query parameters
+  // ===== QUERY PARAMETERS =====
   listQuery: listQuerySchema
 };
 

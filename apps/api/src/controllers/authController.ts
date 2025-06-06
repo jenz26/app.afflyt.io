@@ -1,9 +1,10 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Models } from '../models';
 import { User } from '../types';
 import { AuthRequest } from '../middleware/auth';
+import { ValidatedRequest } from '../middleware/validation';
 import { sendMagicLinkEmail, sendWelcomeEmail } from '../services/emailService';
 import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
@@ -13,9 +14,18 @@ import {
   sendConflictError,
   sendInternalError
 } from '../utils/responseHelpers';
+import { validationSchemas } from '../schemas';
+import { z } from 'zod';
 
 // Create module-specific logger
 const authLogger = createModuleLogger('auth');
+
+// Type definitions for validated requests
+type RegisterRequest = ValidatedRequest<z.infer<typeof validationSchemas.register>>;
+type LoginRequest = ValidatedRequest<z.infer<typeof validationSchemas.login>>;
+type SendMagicLinkRequest = ValidatedRequest<z.infer<typeof validationSchemas.sendMagicLink>>;
+type VerifyMagicLinkRequest = ValidatedRequest<z.infer<typeof validationSchemas.verifyMagicLink>>;
+type CreateApiKeyRequest = ValidatedRequest<z.infer<typeof validationSchemas.createApiKey>> & AuthRequest;
 
 export class AuthController {
   constructor(private models: Models) {
@@ -23,20 +33,15 @@ export class AuthController {
   }
 
   // Register new user
-  register = async (req: Request, res: Response): Promise<void> => {
+  register = async (req: RegisterRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
-      const { email, password, firstName, lastName, role = 'affiliate' } = req.body;
+      // ✅ Data is already validated by Zod middleware
+      const { email, password, firstName, lastName } = req.body;
+      const role = 'affiliate' as const; // Default role
 
       authLogger.debug({ email, role }, 'Registration attempt started');
-
-      // Validation
-      if (!email || !password) {
-        authLogger.warn({ email }, 'Registration failed: missing email or password');
-        sendValidationError(res, 'Email and password are required');
-        return;
-      }
 
       // Check if user already exists
       const existingUser = await this.models.user.findByEmail(email);
@@ -56,7 +61,7 @@ export class AuthController {
         passwordHash,
         firstName: firstName || '',
         lastName: lastName || '',
-        role: role as 'affiliate' | 'advertiser' | 'admin',
+        role,
         isEmailVerified: false
       };
 
@@ -114,19 +119,14 @@ export class AuthController {
   };
 
   // Login user
-  login = async (req: Request, res: Response): Promise<void> => {
+  login = async (req: LoginRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
+      // ✅ Data is already validated by Zod middleware
       const { email, password } = req.body;
 
       authLogger.debug({ email }, 'Login attempt started');
-
-      if (!email || !password) {
-        authLogger.warn({ email }, 'Login failed: missing credentials');
-        sendValidationError(res, 'Email and password are required');
-        return;
-      }
 
       // Find user
       const user = await this.models.user.findByEmail(email);
@@ -182,27 +182,14 @@ export class AuthController {
   };
 
   // Send magic link (for passwordless login)
-  sendMagicLink = async (req: Request, res: Response): Promise<void> => {
+  sendMagicLink = async (req: SendMagicLinkRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
+      // ✅ Data is already validated by Zod middleware (email format, locale, returnUrl)
       const { email, locale = 'it', returnUrl } = req.body;
 
       authLogger.debug({ email, locale }, 'Magic link request started');
-
-      if (!email) {
-        authLogger.warn('Magic link failed: missing email');
-        sendValidationError(res, 'Email is required');
-        return;
-      }
-
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        authLogger.warn({ email }, 'Magic link failed: invalid email format');
-        sendValidationError(res, 'Invalid email format');
-        return;
-      }
 
       // Check if user exists, if not create one for magic link registration
       let user = await this.models.user.findByEmail(email);
@@ -273,19 +260,14 @@ export class AuthController {
   };
 
   // Verify magic link
-  verifyMagicLink = async (req: Request, res: Response): Promise<void> => {
+  verifyMagicLink = async (req: VerifyMagicLinkRequest, res: Response): Promise<void> => {
     const startTime = Date.now();
     
     try {
+      // ✅ Token is already validated by Zod middleware
       const { token } = req.body;
 
       authLogger.debug('Magic link verification attempt started');
-
-      if (!token) {
-        authLogger.warn('Magic link verification failed: missing token');
-        sendValidationError(res, 'Token is required');
-        return;
-      }
 
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { 
@@ -400,18 +382,13 @@ export class AuthController {
   };
 
   // Generate API key
-  generateApiKey = async (req: AuthRequest, res: Response): Promise<void> => {
+  generateApiKey = async (req: CreateApiKeyRequest, res: Response): Promise<void> => {
     try {
+      // ✅ Data is already validated by Zod middleware
       const { name } = req.body;
       const user = req.user!;
 
       authLogger.debug({ userId: user.id, keyName: name }, 'API key generation request');
-
-      if (!name) {
-        authLogger.warn({ userId: user.id }, 'API key generation failed: missing name');
-        sendValidationError(res, 'API key name is required');
-        return;
-      }
 
       const apiKey = await this.models.user.generateApiKey(user.id, name);
 
