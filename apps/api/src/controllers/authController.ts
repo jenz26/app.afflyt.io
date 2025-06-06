@@ -5,6 +5,7 @@ import { Models } from '../models';
 import { User } from '../types';
 import { AuthRequest } from '../middleware/auth';
 import { sendMagicLinkEmail, sendWelcomeEmail } from '../services/emailService';
+import { logger, logUtils, createModuleLogger } from '../config/logger';
 import {
   sendSuccess,
   sendValidationError,
@@ -13,16 +14,26 @@ import {
   sendInternalError
 } from '../utils/responseHelpers';
 
+// Create module-specific logger
+const authLogger = createModuleLogger('auth');
+
 export class AuthController {
-  constructor(private models: Models) {}
+  constructor(private models: Models) {
+    authLogger.debug('AuthController initialized');
+  }
 
   // Register new user
   register = async (req: Request, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const { email, password, firstName, lastName, role = 'affiliate' } = req.body;
 
+      authLogger.debug({ email, role }, 'Registration attempt started');
+
       // Validation
       if (!email || !password) {
+        authLogger.warn({ email }, 'Registration failed: missing email or password');
         sendValidationError(res, 'Email and password are required');
         return;
       }
@@ -30,6 +41,7 @@ export class AuthController {
       // Check if user already exists
       const existingUser = await this.models.user.findByEmail(email);
       if (existingUser) {
+        authLogger.warn({ email }, 'Registration failed: user already exists');
         sendConflictError(res, 'User already exists');
         return;
       }
@@ -49,6 +61,7 @@ export class AuthController {
       };
 
       const user = await this.models.user.create(userData);
+      authLogger.info({ userId: user.id, email }, 'User created successfully');
 
       // Generate verification token (for future email verification)
       const verificationToken = jwt.sign(
@@ -69,8 +82,12 @@ export class AuthController {
 
       // Send welcome email (non-blocking)
       sendWelcomeEmail(email, 'it').catch(error => {
-        console.warn('Failed to send welcome email:', error);
+        logUtils.external.emailFailed(email, 'welcome', error);
       });
+
+      // Log successful registration
+      logUtils.auth.register(user.id, email);
+      logUtils.performance.requestEnd('POST', '/auth/register', Date.now() - startTime, 201);
 
       const responseData = {
         user: {
@@ -89,17 +106,24 @@ export class AuthController {
         statusCode: 201
       });
     } catch (error) {
-      console.error('Registration error:', error);
+      const duration = Date.now() - startTime;
+      authLogger.error({ error, duration }, 'Registration error occurred');
+      logUtils.performance.requestEnd('POST', '/auth/register', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Login user
   login = async (req: Request, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const { email, password } = req.body;
 
+      authLogger.debug({ email }, 'Login attempt started');
+
       if (!email || !password) {
+        authLogger.warn({ email }, 'Login failed: missing credentials');
         sendValidationError(res, 'Email and password are required');
         return;
       }
@@ -107,6 +131,7 @@ export class AuthController {
       // Find user
       const user = await this.models.user.findByEmail(email);
       if (!user || !user.passwordHash) {
+        logUtils.auth.loginFailed(email, 'user_not_found_or_no_password');
         sendUnauthorizedError(res, 'Invalid credentials');
         return;
       }
@@ -114,6 +139,7 @@ export class AuthController {
       // Verify password
       const isValidPassword = await this.models.user.verifyPassword(password, user.passwordHash);
       if (!isValidPassword) {
+        logUtils.auth.loginFailed(email, 'invalid_password');
         sendUnauthorizedError(res, 'Invalid credentials');
         return;
       }
@@ -127,6 +153,10 @@ export class AuthController {
         process.env.JWT_SECRET as string,
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
+
+      // Log successful login
+      logUtils.auth.login(user.id, email, 'password');
+      logUtils.performance.requestEnd('POST', '/auth/login', Date.now() - startTime, 200);
 
       const responseData = {
         user: {
@@ -144,17 +174,24 @@ export class AuthController {
         message: 'Login successful'
       });
     } catch (error) {
-      console.error('Login error:', error);
+      const duration = Date.now() - startTime;
+      authLogger.error({ error, duration }, 'Login error occurred');
+      logUtils.performance.requestEnd('POST', '/auth/login', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Send magic link (for passwordless login)
   sendMagicLink = async (req: Request, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const { email, locale = 'it', returnUrl } = req.body;
 
+      authLogger.debug({ email, locale }, 'Magic link request started');
+
       if (!email) {
+        authLogger.warn('Magic link failed: missing email');
         sendValidationError(res, 'Email is required');
         return;
       }
@@ -162,6 +199,7 @@ export class AuthController {
       // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
+        authLogger.warn({ email }, 'Magic link failed: invalid email format');
         sendValidationError(res, 'Invalid email format');
         return;
       }
@@ -180,7 +218,7 @@ export class AuthController {
         };
         user = await this.models.user.create(userData);
         
-        console.log(`Created new user via magic link: ${email}`);
+        authLogger.info({ userId: user.id, email }, 'User auto-created via magic link');
       }
 
       // Generate magic link token with longer expiry
@@ -203,17 +241,21 @@ export class AuthController {
       });
 
       if (!emailResult.success) {
-        console.error('Magic link email failed:', emailResult.error);
+        logUtils.external.emailFailed(email, 'magic_link', emailResult.error);
         sendInternalError(res, 'Failed to send magic link email');
         return;
       }
+
+      logUtils.external.emailSent(email, 'magic_link', emailResult.messageId);
 
       // Log magic link for development
       if (process.env.NODE_ENV === 'development') {
         const baseUrl = process.env.MAGIC_LINK_BASE_URL || 'http://localhost:3000';
         const magicLink = `${baseUrl}/${locale}/auth/verify?token=${magicToken}${returnUrl ? `&returnUrl=${encodeURIComponent(returnUrl)}` : ''}`;
-        console.log(`🔗 Magic link for ${email}: ${magicLink}`);
+        authLogger.debug({ email, magicLink }, 'Magic link generated for development');
       }
+
+      logUtils.performance.requestEnd('POST', '/auth/magic-link', Date.now() - startTime, 200);
 
       const responseData = {
         messageId: emailResult.messageId
@@ -223,17 +265,24 @@ export class AuthController {
         message: 'Magic link sent successfully'
       });
     } catch (error) {
-      console.error('Magic link error:', error);
+      const duration = Date.now() - startTime;
+      authLogger.error({ error, duration }, 'Magic link error occurred');
+      logUtils.performance.requestEnd('POST', '/auth/magic-link', duration, 500);
       sendInternalError(res);
     }
   };
 
   // Verify magic link
   verifyMagicLink = async (req: Request, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
     try {
       const { token } = req.body;
 
+      authLogger.debug('Magic link verification attempt started');
+
       if (!token) {
+        authLogger.warn('Magic link verification failed: missing token');
         sendValidationError(res, 'Token is required');
         return;
       }
@@ -246,6 +295,7 @@ export class AuthController {
       };
       
       if (decoded.purpose !== 'magic_link') {
+        authLogger.warn({ purpose: decoded.purpose }, 'Magic link verification failed: invalid token purpose');
         sendValidationError(res, 'Invalid token purpose');
         return;
       }
@@ -253,12 +303,17 @@ export class AuthController {
       // Find user
       const user = await this.models.user.findById(decoded.userId);
       if (!user) {
+        authLogger.warn({ userId: decoded.userId }, 'Magic link verification failed: user not found');
         sendValidationError(res, 'User not found');
         return;
       }
 
       // Verify email matches token
       if (user.email !== decoded.email) {
+        authLogger.warn({ 
+          userEmail: user.email, 
+          tokenEmail: decoded.email 
+        }, 'Magic link verification failed: email mismatch');
         sendValidationError(res, 'Token email mismatch');
         return;
       }
@@ -275,6 +330,10 @@ export class AuthController {
         process.env.JWT_SECRET as string,
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
+
+      // Log successful magic link login
+      logUtils.auth.login(user.id, user.email, 'magic_link');
+      logUtils.performance.requestEnd('POST', '/auth/verify-magic-link', Date.now() - startTime, 200);
 
       const responseData = {
         user: {
@@ -296,12 +355,16 @@ export class AuthController {
         message: 'Magic link verified successfully'
       });
     } catch (error) {
+      const duration = Date.now() - startTime;
+      
       if (error instanceof jwt.JsonWebTokenError) {
+        authLogger.warn({ error: error.message }, 'Magic link verification failed: invalid/expired token');
         sendUnauthorizedError(res, 'Invalid or expired magic link');
         return;
       }
 
-      console.error('Magic link verification error:', error);
+      authLogger.error({ error, duration }, 'Magic link verification error occurred');
+      logUtils.performance.requestEnd('POST', '/auth/verify-magic-link', duration, 500);
       sendUnauthorizedError(res, 'Invalid or expired token');
     }
   };
@@ -310,6 +373,8 @@ export class AuthController {
   getProfile = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
       const user = req.user!;
+
+      authLogger.debug({ userId: user.id }, 'Profile request');
 
       const responseData = {
         id: user.id,
@@ -329,7 +394,7 @@ export class AuthController {
 
       sendSuccess(res, responseData);
     } catch (error) {
-      console.error('Get profile error:', error);
+      authLogger.error({ error }, 'Get profile error occurred');
       sendInternalError(res);
     }
   };
@@ -340,12 +405,17 @@ export class AuthController {
       const { name } = req.body;
       const user = req.user!;
 
+      authLogger.debug({ userId: user.id, keyName: name }, 'API key generation request');
+
       if (!name) {
+        authLogger.warn({ userId: user.id }, 'API key generation failed: missing name');
         sendValidationError(res, 'API key name is required');
         return;
       }
 
       const apiKey = await this.models.user.generateApiKey(user.id, name);
+
+      logUtils.auth.apiKeyGenerated(user.id, name);
 
       const responseData = {
         apiKey: {
@@ -362,7 +432,7 @@ export class AuthController {
         statusCode: 201
       });
     } catch (error) {
-      console.error('Generate API key error:', error);
+      authLogger.error({ error }, 'Generate API key error occurred');
       sendInternalError(res);
     }
   };
@@ -370,6 +440,9 @@ export class AuthController {
   // Logout (optional endpoint for token invalidation)
   logout = async (req: AuthRequest, res: Response): Promise<void> => {
     try {
+      const user = req.user;
+      authLogger.debug({ userId: user?.id }, 'Logout request');
+      
       // For JWT, logout is typically handled client-side by removing the token
       // We could implement a token blacklist here if needed
       
@@ -377,7 +450,7 @@ export class AuthController {
         message: 'Logout successful'
       });
     } catch (error) {
-      console.error('Logout error:', error);
+      authLogger.error({ error }, 'Logout error occurred');
       sendInternalError(res);
     }
   };
