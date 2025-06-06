@@ -1,6 +1,5 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import dotenv from 'dotenv';
 
 // Load environment variables
@@ -10,6 +9,13 @@ dotenv.config();
 import database from './config/database';
 import redis from './config/redis';
 import { logger, httpLogger, logUtils } from './config/logger';
+import { 
+  helmetConfig, 
+  additionalSecurityHeaders, 
+  securityMonitoring,
+  cspReportHandler 
+} from './config/security';
+import { sanitize } from './middleware/validation';
 import { Models } from './models';
 import { createRoutes, createAPIRoutes, createPublicRoutes } from './routes';
 import { createConditionalGeneralLimiter } from './middleware/rateLimiter';
@@ -31,9 +37,12 @@ class App {
   }
 
   private initializeMiddlewares(): void {
-    // Security middleware
-    this.app.use(helmet());
-    logger.debug('Security middleware (Helmet) initialized');
+    // ===== 🔒 NEW v1.8.5: ENHANCED SECURITY MIDDLEWARE =====
+    // Advanced security headers with Content Security Policy
+    this.app.use(helmetConfig);
+    this.app.use(additionalSecurityHeaders());
+    this.app.use(securityMonitoring());
+    logger.info('Enhanced security middleware (Helmet + CSP) initialized');
 
     // CORS configuration
     const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
@@ -41,7 +50,8 @@ class App {
       origin: allowedOrigins,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'limit', 'groupby', 'startdate', 'enddate']
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'limit', 'groupby', 'startdate', 'enddate'],
+      exposedHeaders: ['X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset']
     }));
     logger.debug({ allowedOrigins }, 'CORS middleware initialized');
 
@@ -50,10 +60,23 @@ class App {
     this.app.use(httpLogger);
     logger.info('HTTP logging middleware (Pino) initialized');
 
-    // Body parsing
-    this.app.use(express.json({ limit: '10mb' }));
-    this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-    logger.debug('Body parsing middleware initialized');
+    // ===== 🔒 NEW v1.8.5: INPUT SANITIZATION =====
+    // Sanitize all incoming data before processing
+    this.app.use(sanitize());
+    logger.debug('Input sanitization middleware initialized');
+
+    // Body parsing with security limits
+    this.app.use(express.json({ 
+      limit: '10mb',
+      strict: true, // Only accept arrays and objects
+      type: ['application/json', 'application/csp-report'] // CSP reports
+    }));
+    this.app.use(express.urlencoded({ 
+      extended: true, 
+      limit: '10mb',
+      parameterLimit: 1000 // Prevent parameter pollution
+    }));
+    logger.debug('Body parsing middleware initialized with security limits');
 
     // ===== 🚀 v1.8.1: CONDITIONAL GLOBAL RATE LIMITING =====
     // General rate limiting - conditionally applied based on DISABLE_RATE_LIMIT
@@ -77,10 +100,16 @@ class App {
         status: 'OK',
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV,
-        version: process.env.API_VERSION || 'v1.8.4',
+        version: process.env.API_VERSION || 'v1.8.5',
         services: {
           database: 'connected',
           redis: 'connected'
+        },
+        security: {
+          helmet: 'enabled',
+          csp: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled',
+          inputValidation: 'enabled',
+          sanitization: 'enabled'
         },
         rateLimiting: {
           enabled: process.env.DISABLE_RATE_LIMIT !== 'true',
@@ -91,6 +120,11 @@ class App {
       logger.debug('Health check requested');
       res.status(200).json(healthData);
     });
+
+    // ===== 🔒 NEW v1.8.5: CSP VIOLATION REPORTING =====
+    // Endpoint for Content Security Policy violation reports
+    this.app.post('/api/security/csp-report', express.json({ type: 'application/csp-report' }), cspReportHandler());
+    logger.debug('CSP violation reporting endpoint initialized');
 
     // Public routes (redirects and tracking)
     this.app.use('/', createPublicRoutes(this.models));
@@ -104,10 +138,10 @@ class App {
     this.app.use('/api', createAPIRoutes(this.models));
     logger.debug('New API routes (v1.3.0+) initialized');
 
-    // API info endpoint (updated for v1.8.4)
+    // API info endpoint (updated for v1.8.5)
     this.app.get('/api/v1', (req: Request, res: Response) => {
       const apiInfo = {
-        message: 'Afflyt.io API v1.8.4',
+        message: 'Afflyt.io API v1.8.5',
         status: 'active',
         timestamp: new Date().toISOString(),
         endpoints: {
@@ -129,15 +163,23 @@ class App {
         },
         documentation: '/docs', // Future Swagger endpoint
         version: {
-          current: 'v1.8.4',
-          description: 'Advanced Logging & Monitoring with Pino',
+          current: 'v1.8.5',
+          description: 'Input Validation & Security Hardening',
           changes: [
-            'Replaced console.* with structured Pino logging',
-            'Added HTTP request/response logging with pino-http',
-            'Implemented centralized logger with development/production modes',
-            'Added specialized logging utilities for different app modules',
-            'Enhanced error tracking and performance monitoring'
+            'Implemented centralized input validation with Zod schemas',
+            'Added comprehensive request sanitization middleware',
+            'Enhanced Content Security Policy with environment-specific rules',
+            'Strengthened security headers and monitoring',
+            'Added CSP violation reporting endpoint',
+            'Improved error handling for validation failures'
           ]
+        },
+        security: {
+          inputValidation: 'zod-based schemas',
+          sanitization: 'enabled',
+          csp: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled',
+          headers: 'enhanced helmet configuration',
+          monitoring: 'suspicious request detection'
         },
         rateLimiting: {
           enabled: process.env.DISABLE_RATE_LIMIT !== 'true',
@@ -247,8 +289,14 @@ class App {
       logger.info({
         models: ['User', 'AffiliateLink', 'Click', 'UserSetting', 'Conversion'],
         routes: ['Legacy API (v1.2.0)', 'New API (v1.3.0+)', 'Public Routes'],
+        security: {
+          helmet: 'enabled',
+          csp: process.env.NODE_ENV === 'production' ? 'enabled' : 'disabled',
+          inputValidation: 'enabled',
+          sanitization: 'enabled'
+        },
         rateLimiting: process.env.DISABLE_RATE_LIMIT !== 'true' ? 'enabled' : 'disabled',
-        version: 'v1.8.4'
+        version: 'v1.8.5'
       }, 'Application initialized successfully');
       
     } catch (error) {
