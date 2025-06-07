@@ -4,7 +4,7 @@
  * Modern Sign In Page for Afflyt.io with i18n support
  * Magic link authentication form with beautiful design
  * 
- * @version 1.5.0
+ * @version 1.6.0 - UPDATED: Fixed race condition handling
  * @phase Frontend-Backend Integration
  */
 
@@ -16,8 +16,7 @@ import { LoadingSpinner, ErrorAlert } from '@/components/ui/LoadingError';
 import { useClientI18n } from '../../../../lib/i18n/useClientI18n';
 import { Mail, Sparkles, ArrowRight, CheckCircle2, Zap } from 'lucide-react';
 
-// Animated Background Component (same as homepage)
-// Nel componente AnimatedBackground, sostituisci i Math.random() con valori fissi o usa useEffect
+// Animated Background Component
 const AnimatedBackground: React.FC = () => {
   const [particles, setParticles] = useState<Array<{left: string, top: string, delay: string, duration: string}>>([]);
 
@@ -70,17 +69,23 @@ export default function SignInPage({
   const [linkSent, setLinkSent] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const { sendMagicLink, isLoggedIn, isLoading: authLoading } = useAuth();
+  const { 
+    sendMagicLink, 
+    isLoggedIn, 
+    isLoading, 
+    isInitializing, // NEW: Check if still initializing
+    canRedirect     // NEW: Only redirect when safe
+  } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Redirect if already logged in
+  // FIXED: Only redirect if already logged in AND initialization is complete
   useEffect(() => {
-    if (isLoggedIn && !authLoading) {
+    if (canRedirect && isLoggedIn && !isLoading) {
       const returnUrl = searchParams.get('returnUrl') || `/${locale}/dashboard`;
       router.push(returnUrl);
     }
-  }, [isLoggedIn, authLoading, router, searchParams, locale]);
+  }, [canRedirect, isLoggedIn, isLoading, router, searchParams, locale]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,8 +115,8 @@ export default function SignInPage({
     }
   };
 
-  // Show loading if checking auth state
-  if (authLoading) {
+  // Show loading during initialization or auth operations
+  if (isInitializing || (canRedirect && isLoggedIn && !isLoading)) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex flex-col justify-center py-8 sm:px-6 lg:px-8">
         <AnimatedBackground />
@@ -119,7 +124,10 @@ export default function SignInPage({
           <div className="text-center">
             <LoadingSpinner size="large" className="mb-4" />
             <p className="text-gray-300 text-lg">
-              {t('auth.checkingAuth', 'Checking authentication...')}
+              {isInitializing 
+                ? t('auth.checkingAuth', 'Verificando autenticazione...')
+                : t('auth.redirecting', 'Reindirizzamento alla dashboard...')
+              }
             </p>
           </div>
         </div>

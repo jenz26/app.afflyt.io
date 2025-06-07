@@ -138,9 +138,14 @@ export const createSupportRoutes = (models: Models): Router => {
   );
 
   /**
-   * Health check for support system
-   * GET /health
+   * Get user's tickets (requires authentication)
+   * GET /user/tickets
    */
+  router.get(
+    '/user/tickets',
+    generalRateLimit,
+    supportController.getUserTickets
+  );
   router.get(
     '/health',
     generalRateLimit,

@@ -408,6 +408,63 @@ export class SupportTicketModel {
     });
   }
 
+  // ✅ NEW METHOD: Find tickets by user ID - PROPERLY INTEGRATED
+  async findByUserId(
+    userId: string, 
+    options: {
+      limit?: number;
+      offset?: number;
+      status?: SupportTicket['status'];
+      sortBy?: 'submittedAt' | 'status' | 'priority';
+      sortOrder?: 'asc' | 'desc';
+    } = {}
+  ): Promise<SupportTicket[]> {
+    
+    const {
+      limit = 50,
+      offset = 0,
+      status,
+      sortBy = 'submittedAt',
+      sortOrder = 'desc'
+    } = options;
+
+    supportTicketLogger.debug({ 
+      userId, 
+      limit, 
+      offset, 
+      status, 
+      sortBy, 
+      sortOrder 
+    }, 'Finding support tickets by user ID');
+
+    return await database.monitoredOperation('support_tickets', 'findByUserId', async () => {
+      // Build filter
+      const filter: any = { userId };
+      if (status) filter.status = status;
+
+      // Build sort
+      const sort: any = {};
+      sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+
+      const tickets = await this.collection
+        .find(filter)
+        .sort(sort)
+        .skip(offset)
+        .limit(limit)
+        .toArray();
+
+      supportTicketLogger.info({
+        userId,
+        found: tickets.length,
+        filter: status ? { status } : 'all',
+        limit,
+        offset
+      }, 'User tickets query completed');
+
+      return tickets;
+    });
+  }
+
   async getStats(): Promise<{
     total: number;
     byStatus: Record<SupportTicket['status'], number>;

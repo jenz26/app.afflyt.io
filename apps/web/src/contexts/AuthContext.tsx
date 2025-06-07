@@ -4,7 +4,7 @@
  * Authentication Context for Afflyt.io
  * Manages user authentication state, JWT tokens, and auth-related operations
  * 
- * @version 1.5.0
+ * @version 1.6.0 - FIXED: Session persistence race condition
  * @phase Frontend-Backend Integration
  */
 
@@ -32,6 +32,7 @@ export interface AuthState {
   user: User | null;
   token: string | null;
   isLoading: boolean;
+  isInitialized: boolean; // NEW: Tracks if auth initialization is complete
   isAuthenticated: boolean;
   error: string | null;
 }
@@ -62,7 +63,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [state, setState] = useState<AuthState>({
     user: null,
     token: null,
-    isLoading: true,
+    isLoading: false, // Changed: Start with false for operations
+    isInitialized: false, // NEW: Track initialization state
     isAuthenticated: false,
     error: null,
   });
@@ -77,14 +79,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (storedToken && storedUser) {
           const user = JSON.parse(storedUser);
           
-          // Verify token is still valid by fetching user profile
+          // Set loading state during token verification
+          setState(prev => ({
+            ...prev,
+            isLoading: true,
+          }));
+
           try {
-            const updatedUser = await apiClient.get('/api/user/me', { token: storedToken });
+            // Verify token is still valid by fetching user profile
+            const response = await apiClient.get('/api/user/me', { token: storedToken });
+            
+            // FIXED: Backend returns { user: {...} }, so extract the user object
+            const updatedUser = response.user || response;
             
             setState({
               user: updatedUser,
               token: storedToken,
               isLoading: false,
+              isInitialized: true, // Initialization complete with valid session
               isAuthenticated: true,
               error: null,
             });
@@ -100,14 +112,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
               user: null,
               token: null,
               isLoading: false,
+              isInitialized: true, // Initialization complete but no valid session
               isAuthenticated: false,
               error: null,
             });
           }
         } else {
+          // No stored session, initialization complete
           setState(prev => ({
             ...prev,
-            isLoading: false,
+            isInitialized: true,
           }));
         }
       } catch (error) {
@@ -116,6 +130,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           user: null,
           token: null,
           isLoading: false,
+          isInitialized: true, // Even on error, initialization is complete
           isAuthenticated: false,
           error: 'Failed to initialize authentication',
         });
@@ -134,6 +149,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       user,
       token,
       isLoading: false,
+      isInitialized: true,
       isAuthenticated: true,
       error: null,
     });
@@ -148,6 +164,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       user: null,
       token: null,
       isLoading: false,
+      isInitialized: true,
       isAuthenticated: false,
       error: null,
     });
