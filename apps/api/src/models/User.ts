@@ -10,7 +10,15 @@ import {
   UpdateChannelRequest,
   AMAZON_MARKETPLACES,
   CHANNEL_TYPES,
-  AMAZON_TAG_REGEX
+  AMAZON_TAG_REGEX,
+  // 🎨 NEW v1.8.9: Add branding imports
+  UserBranding,
+  UpdateUserBrandingRequest,
+  UserBrandingResponse,
+  BACKGROUND_TYPES,
+  GRADIENT_DIRECTIONS,
+  BRANDING_LIMITS,
+  DEFAULT_BRANDING
 } from '../types';
 import { logUtils, createModuleLogger } from '../config/logger';
 import { database } from '../config/database';
@@ -1020,4 +1028,277 @@ export class UserModel {
       return false;
     }
   }
+
+  // ===== 🎨 NEW v1.8.9: USER BRANDING METHODS =====
+// Add these methods to your existing UserModel class
+
+/**
+ * Update user branding configuration
+ */
+async updateBranding(userId: string, brandingData: UpdateUserBrandingRequest): Promise<UserBranding | null> {
+  userLogger.info({ 
+    userId, 
+    updates: Object.keys(brandingData) 
+  }, 'Updating user branding');
+
+  return await database.monitoredOperation('users', 'updateBranding', async () => {
+    // Validate branding data
+    this.validateBrandingData(brandingData);
+
+    const user = await this.findById(userId);
+    if (!user) {
+      userLogger.error({ userId }, 'User not found for branding update');
+      return null;
+    }
+
+    // Merge with existing branding or create new
+    const currentBranding = user.branding || {};
+    const updatedBranding: UserBranding = {
+      ...currentBranding,
+      ...brandingData
+    };
+
+    const result = await this.collection.findOneAndUpdate(
+      { id: userId },
+      { 
+        $set: { 
+          branding: updatedBranding,
+          updatedAt: new Date() 
+        } 
+      },
+      { returnDocument: 'after' }
+    );
+
+    if (result) {
+      userLogger.info({ 
+        userId, 
+        updatedFields: Object.keys(brandingData),
+        displayName: updatedBranding.displayName,
+        themeColor: updatedBranding.themeColor
+      }, 'User branding updated successfully');
+    }
+
+    return result?.branding || null;
+  });
 }
+
+/**
+ * Get user branding configuration
+ */
+async getBranding(userId: string): Promise<UserBranding | null> {
+  userLogger.debug({ userId }, 'Getting user branding');
+  
+  return await database.monitoredOperation('users', 'getBranding', async () => {
+    const user = await this.findById(userId);
+    const branding = user?.branding || null;
+    
+    userLogger.debug({ 
+      userId, 
+      hasBranding: !!branding,
+      displayName: branding?.displayName
+    }, 'User branding retrieved');
+    
+    return branding;
+  });
+}
+
+/**
+ * Get user branding for preview page (public data only)
+ */
+async getBrandingForPreview(userId: string): Promise<UserBrandingResponse> {
+  userLogger.debug({ userId }, 'Getting user branding for preview');
+  
+  return await database.monitoredOperation('users', 'getBrandingForPreview', async () => {
+    const user = await this.findById(userId);
+    const branding = user?.branding || {};
+    
+    // Return only public branding data (no customCss for security)
+    const publicBranding: UserBrandingResponse = {
+      displayName: branding.displayName,
+      logoUrl: branding.logoUrl,
+      themeColor: branding.themeColor || DEFAULT_BRANDING.themeColor,
+      backgroundType: branding.backgroundType || DEFAULT_BRANDING.backgroundType,
+      backgroundColor: branding.backgroundColor || DEFAULT_BRANDING.backgroundColor,
+      backgroundGradient: branding.backgroundGradient,
+      backgroundImageUrl: branding.backgroundImageUrl,
+      description: branding.description,
+      socialLinks: branding.socialLinks,
+      showAffiliateBadge: branding.showAffiliateBadge ?? DEFAULT_BRANDING.showAffiliateBadge,
+      customAffiliateText: branding.customAffiliateText || DEFAULT_BRANDING.customAffiliateText
+    };
+    
+    userLogger.debug({ 
+      userId, 
+      displayName: publicBranding.displayName,
+      hasLogo: !!publicBranding.logoUrl
+    }, 'User branding for preview retrieved');
+    
+    return publicBranding;
+  });
+}
+
+/**
+ * Get user display name for preview (fallback chain)
+ */
+async getDisplayNameForPreview(userId: string): Promise<string> {
+  const user = await this.findById(userId);
+  
+  // Fallback chain: branding.displayName -> firstName -> name -> "Afflyt Creator"
+  return user?.branding?.displayName || 
+         user?.firstName || 
+         user?.name || 
+         "Afflyt Creator";
+}
+
+/**
+ * Reset user branding to defaults
+ */
+async resetBranding(userId: string): Promise<UserBranding> {
+  userLogger.info({ userId }, 'Resetting user branding to defaults');
+  
+  return await database.monitoredOperation('users', 'resetBranding', async () => {
+    const defaultBranding: UserBranding = {
+      ...DEFAULT_BRANDING,
+      showAffiliateBadge: true,
+      customAffiliateText: DEFAULT_BRANDING.customAffiliateText
+    };
+
+    await this.collection.updateOne(
+      { id: userId },
+      { 
+        $set: { 
+          branding: defaultBranding,
+          updatedAt: new Date() 
+        } 
+      }
+    );
+
+    userLogger.info({ userId }, 'User branding reset successfully');
+    return defaultBranding;
+  });
+}
+
+// ===== 🎨 BRANDING VALIDATION HELPERS =====
+
+/**
+ * Validate branding data
+ */
+private validateBrandingData(data: UpdateUserBrandingRequest): void {
+  // Display name validation
+  if (data.displayName !== undefined) {
+    if (data.displayName.trim().length === 0) {
+      userLogger.error('Display name cannot be empty');
+      throw new Error('Display name cannot be empty');
+    }
+    if (data.displayName.length > BRANDING_LIMITS.displayName.max) {
+      userLogger.error({ nameLength: data.displayName.length }, 'Display name too long');
+      throw new Error(`Display name must be less than ${BRANDING_LIMITS.displayName.max} characters`);
+    }
+  }
+
+  // Description validation
+  if (data.description !== undefined && data.description.length > BRANDING_LIMITS.description.max) {
+    userLogger.error({ descriptionLength: data.description.length }, 'Description too long');
+    throw new Error(`Description must be less than ${BRANDING_LIMITS.description.max} characters`);
+  }
+
+  // Theme color validation (HEX format)
+  if (data.themeColor !== undefined && !this.isValidHexColor(data.themeColor)) {
+    userLogger.error({ themeColor: data.themeColor }, 'Invalid theme color format');
+    throw new Error('Theme color must be a valid HEX color (e.g., #FF6B35)');
+  }
+
+  // Background type validation
+  if (data.backgroundType !== undefined && !BACKGROUND_TYPES.includes(data.backgroundType)) {
+    userLogger.error({ 
+      backgroundType: data.backgroundType,
+      supportedTypes: BACKGROUND_TYPES
+    }, 'Invalid background type');
+    throw new Error(`Invalid background type. Supported: ${BACKGROUND_TYPES.join(', ')}`);
+  }
+
+  // Background color validation
+  if (data.backgroundColor !== undefined && !this.isValidHexColor(data.backgroundColor)) {
+    userLogger.error({ backgroundColor: data.backgroundColor }, 'Invalid background color format');
+    throw new Error('Background color must be a valid HEX color');
+  }
+
+  // Gradient validation
+  if (data.backgroundGradient !== undefined) {
+    const { from, to, direction } = data.backgroundGradient;
+    if (!this.isValidHexColor(from) || !this.isValidHexColor(to)) {
+      userLogger.error({ gradient: data.backgroundGradient }, 'Invalid gradient colors');
+      throw new Error('Gradient colors must be valid HEX colors');
+    }
+    if (direction && !GRADIENT_DIRECTIONS.includes(direction)) {
+      userLogger.error({ direction }, 'Invalid gradient direction');
+      throw new Error(`Invalid gradient direction. Supported: ${GRADIENT_DIRECTIONS.join(', ')}`);
+    }
+  }
+
+  // URL validations
+  if (data.logoUrl !== undefined && !this.isValidImageUrl(data.logoUrl)) {
+    userLogger.error({ logoUrl: data.logoUrl }, 'Invalid logo URL');
+    throw new Error('Logo URL must be a valid image URL');
+  }
+
+  if (data.backgroundImageUrl !== undefined && !this.isValidImageUrl(data.backgroundImageUrl)) {
+    userLogger.error({ backgroundImageUrl: data.backgroundImageUrl }, 'Invalid background image URL');
+    throw new Error('Background image URL must be a valid image URL');
+  }
+
+  // Social links validation
+  if (data.socialLinks !== undefined) {
+    Object.entries(data.socialLinks).forEach(([platform, url]) => {
+      if (url && !this.isValidUrl(url)) {
+        userLogger.error({ platform, url }, 'Invalid social link URL');
+        throw new Error(`Invalid ${platform} URL format`);
+      }
+    });
+  }
+
+  // Custom affiliate text validation
+  if (data.customAffiliateText !== undefined) {
+    if (data.customAffiliateText.length < BRANDING_LIMITS.customAffiliateText.min ||
+        data.customAffiliateText.length > BRANDING_LIMITS.customAffiliateText.max) {
+      userLogger.error({ textLength: data.customAffiliateText.length }, 'Invalid affiliate text length');
+      throw new Error(`Affiliate text must be between ${BRANDING_LIMITS.customAffiliateText.min} and ${BRANDING_LIMITS.customAffiliateText.max} characters`);
+    }
+  }
+}
+
+/**
+ * Validate HEX color format
+ */
+private isValidHexColor(color: string): boolean {
+  return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color);
+}
+
+/**
+ * Validate image URL (basic check for common image extensions)
+ */
+private isValidImageUrl(url: string): boolean {
+  if (!this.isValidUrl(url)) return false;
+  return /\.(jpg|jpeg|png|gif|svg|webp)$/i.test(url) || 
+         url.includes('cloudinary.com') || 
+         url.includes('imgur.com') ||
+         url.includes('gravatar.com');
+}
+
+/**
+ * Create indexes for branding fields
+ */
+private async createBrandingIndexes(): Promise<void> {
+  try {
+    await Promise.all([
+      this.collection.createIndex({ 'branding.displayName': 1 }),
+      this.collection.createIndex({ 'branding.themeColor': 1 }),
+    ]);
+    
+    userLogger.debug('Branding indexes created successfully');
+  } catch (error) {
+    userLogger.error({ error }, 'Failed to create branding indexes');
+  }
+}
+}
+

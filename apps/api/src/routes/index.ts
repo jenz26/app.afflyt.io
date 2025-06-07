@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { Models } from '../models';
 import { createAuthRoutes } from './authRoutes';
-import { createLinkRoutes, createRedirectRoutes } from './linkRoutes';
+import { createLinkRoutes } from './linkRoutes'; // 🗑️ REMOVED: createRedirectRoutes 
 import { createUserRoutes } from './userRoutes';
 import { createTrackingRoutes } from './trackingRoutes';
-import { createSupportRoutes } from './supportRoutes'; // ✨ NEW: Support Routes
+import { createSupportRoutes } from './supportRoutes';
+import { createPublicLinkRoutes } from './publicRoutes'; // 🚀 NEW: Public API Routes
 
 export const createRoutes = (models: Models): Router => {
   const router = Router();
@@ -21,7 +22,10 @@ export const createAPIRoutes = (models: Models): Router => {
 
   // New API structure for v1.3.0+
   router.use('/user', createUserRoutes(models));
-  router.use('/support', createSupportRoutes(models)); // ✨ NEW: Support Routes
+  router.use('/support', createSupportRoutes(models));
+
+  // 🚀 NEW v1.8.9: Public API for preview pages and tracking
+  router.use('/public', createPublicLinkRoutes(models));
 
   return router;
 };
@@ -29,10 +33,11 @@ export const createAPIRoutes = (models: Models): Router => {
 export const createPublicRoutes = (models: Models): Router => {
   const router = Router();
 
-  // Public redirect routes (short URLs)
-  router.use('/r', createRedirectRoutes(models));
+  // 🗑️ REMOVED: Short URL redirects (replaced with preview pages)
+  // Old: router.use('/r', createRedirectRoutes(models));
+  // New approach: Next.js handles /r/[hash] routing and calls our public API
   
-  // Public tracking routes
+  // Public tracking routes (keep existing)
   router.use('/track', createTrackingRoutes(models));
 
   return router;

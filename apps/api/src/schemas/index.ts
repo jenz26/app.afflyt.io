@@ -441,7 +441,138 @@ export const listQuerySchema = z.object({
   isActive: z.coerce.boolean().optional()
 });
 
-// ===== EXPORT ALL SCHEMAS =====
+// ===== 🎨 NEW v1.8.9: BRANDING VALIDATION SCHEMAS =====
+
+/**
+ * Branding validation constants
+ */
+export const BACKGROUND_TYPES = ['solid', 'gradient', 'image'] as const;
+export const GRADIENT_DIRECTIONS = ['to-r', 'to-br', 'to-b', 'to-bl'] as const;
+
+export const BRANDING_LIMITS = {
+  displayName: { min: 1, max: 50 },
+  description: { min: 1, max: 200 },
+  customAffiliateText: { min: 10, max: 300 },
+  logoUrl: { max: 500 },
+  backgroundImageUrl: { max: 500 },
+  socialUrls: { max: 500 }
+} as const;
+
+/**
+ * HEX color validation
+ */
+const hexColorSchema = z.string()
+  .regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Must be a valid HEX color (e.g., #FF6B35)')
+  .optional();
+
+/**
+ * URL validation with image extension check
+ */
+const imageUrlSchema = z.string()
+  .url('Must be a valid URL')
+  .refine(
+    (url) => {
+      return /\.(jpg|jpeg|png|gif|svg|webp)$/i.test(url) || 
+             url.includes('cloudinary.com') || 
+             url.includes('imgur.com') ||
+             url.includes('gravatar.com');
+    },
+    'Must be a valid image URL (jpg, png, gif, svg, webp) or from supported CDN'
+  )
+  .optional();
+
+/**
+ * Social links schema
+ */
+const socialLinksSchema = z.object({
+  website: z.string().url().optional(),
+  instagram: z.string().url().optional(),
+  youtube: z.string().url().optional(),
+  telegram: z.string().url().optional(),
+  discord: z.string().url().optional(),
+}).optional();
+
+/**
+ * Background gradient schema
+ */
+const backgroundGradientSchema = z.object({
+  from: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'From color must be valid HEX'),
+  to: z.string().regex(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'To color must be valid HEX'),
+  direction: z.enum(GRADIENT_DIRECTIONS).optional()
+}).optional();
+
+/**
+ * Update user branding request schema
+ */
+export const updateUserBrandingSchema = z.object({
+  displayName: z.string()
+    .min(BRANDING_LIMITS.displayName.min, `Display name must be at least ${BRANDING_LIMITS.displayName.min} character`)
+    .max(BRANDING_LIMITS.displayName.max, `Display name must be less than ${BRANDING_LIMITS.displayName.max} characters`)
+    .trim()
+    .optional(),
+    
+  logoUrl: imageUrlSchema,
+  
+  themeColor: hexColorSchema,
+  
+  backgroundType: z.enum(BACKGROUND_TYPES).optional(),
+  
+  backgroundColor: hexColorSchema,
+  
+  backgroundGradient: backgroundGradientSchema,
+  
+  backgroundImageUrl: imageUrlSchema,
+  
+  description: z.string()
+    .max(BRANDING_LIMITS.description.max, `Description must be less than ${BRANDING_LIMITS.description.max} characters`)
+    .trim()
+    .optional(),
+    
+  socialLinks: socialLinksSchema,
+  
+  showAffiliateBadge: z.boolean().optional(),
+  
+  customAffiliateText: z.string()
+    .min(BRANDING_LIMITS.customAffiliateText.min, `Affiliate text must be at least ${BRANDING_LIMITS.customAffiliateText.min} characters`)
+    .max(BRANDING_LIMITS.customAffiliateText.max, `Affiliate text must be less than ${BRANDING_LIMITS.customAffiliateText.max} characters`)
+    .trim()
+    .optional()
+});
+
+/**
+ * Reset branding request schema (empty body)
+ */
+export const resetUserBrandingSchema = z.object({});
+
+/**
+ * Get branding query schema (no parameters needed)
+ */
+export const getUserBrandingSchema = z.object({});
+
+// ===== 🎯 NEW v1.8.9: CLICK TRACKING SCHEMAS =====
+
+/**
+ * Click tracking metadata schema
+ */
+const clickMetadataSchema = z.object({
+  referer: z.string().url().optional(),
+  country: z.string().max(10).optional(),
+  device: z.enum(['mobile', 'tablet', 'desktop', 'unknown']).optional(),
+  browser: z.string().max(50).optional(),
+  sessionId: z.string().max(100).optional(),
+  timestamp: z.string().datetime().optional()
+}).optional();
+
+/**
+ * Track click request schema
+ * Used by preview pages to record click events
+ */
+export const trackClickSchema = z.object({
+  hash: nonEmptyString.regex(/^[a-zA-Z0-9]{6,12}$/, 'Invalid link hash format'),
+  metadata: clickMetadataSchema
+});
+
+// ===== EXPORT ALL SCHEMAS ===== 
 
 export const validationSchemas = {
   // ===== AUTH =====
@@ -454,6 +585,14 @@ export const validationSchemas = {
   
   // ===== USER PROFILE =====
   updateProfile: updateProfileSchema,
+  
+  // 🎨 NEW v1.8.9: USER BRANDING =====
+  updateUserBranding: updateUserBrandingSchema,
+  resetUserBranding: resetUserBrandingSchema,
+  getUserBranding: getUserBrandingSchema,
+  
+  // 🎯 NEW v1.8.9: CLICK TRACKING =====
+  trackClick: trackClickSchema,
   
   // ===== API KEYS =====
   createApiKey: createApiKeySchema,
@@ -570,6 +709,5 @@ export const supportTicketsQuerySchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   search: trimmedString.optional() // Search in name, email, or ticket number
 });
-
 
 export default validationSchemas;

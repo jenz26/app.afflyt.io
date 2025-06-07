@@ -412,3 +412,163 @@ export interface SupportTicketResponse {
   submittedAt: string;
   userId?: string;
 }
+
+// ===== 🎨 NEW v1.8.9: USER BRANDING SUPPORT =====
+
+/**
+ * User branding configuration for custom preview pages
+ * This transforms compliance requirement into a powerful branding feature
+ */
+export interface UserBranding {
+  displayName?: string; // Custom name for preview pages (e.g., "TechReviews by Marco")
+  logoUrl?: string; // URL to user's logo/avatar
+  themeColor?: string; // Primary color for preview page (#HEX format)
+  backgroundType?: 'solid' | 'gradient' | 'image'; // Background style
+  backgroundColor?: string; // Background color for solid type
+  backgroundGradient?: { 
+    from: string; 
+    to: string; 
+    direction?: 'to-r' | 'to-br' | 'to-b' | 'to-bl'; 
+  }; // Gradient colors
+  backgroundImageUrl?: string; // Background image URL
+  description?: string; // Short description/tagline for preview pages
+  socialLinks?: {
+    website?: string;
+    instagram?: string;
+    youtube?: string;
+    telegram?: string;
+    discord?: string;
+  };
+  // Advanced customization
+  customCss?: string; // Custom CSS for advanced users
+  showAffiliateBadge?: boolean; // Show "Amazon Associate" badge
+  customAffiliateText?: string; // Custom affiliate disclosure text
+}
+
+// User interface updated with branding
+export interface User extends BaseDocument {
+  id: string;
+  email: string;
+  name?: string;
+  passwordHash?: string;
+  firstName?: string;
+  lastName?: string;
+  role: 'affiliate' | 'advertiser' | 'admin';
+  isEmailVerified: boolean;
+  lastLoginAt?: Date;
+  balance: number;
+  apiKeys: ApiKey[];
+  
+  // ⚠️ DEPRECATED (kept for backward compatibility)
+  amazonAssociateTag?: string;
+  websiteUrl?: string;
+  companyName?: string;
+  
+  // ✨ v1.8.x: Multi-entity support
+  amazonTags: AmazonTag[];
+  channels: Channel[];
+  
+  // Default preferences
+  defaultAmazonTagId?: string;
+  defaultChannelId?: string;
+  
+  // 🎨 NEW v1.8.9: Branding configuration
+  branding?: UserBranding;
+}
+
+// ===== REQUEST/RESPONSE TYPES FOR BRANDING =====
+
+/**
+ * Request body for updating user branding
+ */
+export interface UpdateUserBrandingRequest {
+  displayName?: string;
+  logoUrl?: string;
+  themeColor?: string;
+  backgroundType?: UserBranding['backgroundType'];
+  backgroundColor?: string;
+  backgroundGradient?: UserBranding['backgroundGradient'];
+  backgroundImageUrl?: string;
+  description?: string;
+  socialLinks?: UserBranding['socialLinks'];
+  showAffiliateBadge?: boolean;
+  customAffiliateText?: string;
+  // Note: customCss not included in public API for security
+}
+
+/**
+ * Response for user branding operations
+ */
+export interface UserBrandingResponse {
+  displayName?: string;
+  logoUrl?: string;
+  themeColor?: string;
+  backgroundType?: UserBranding['backgroundType'];
+  backgroundColor?: string;
+  backgroundGradient?: UserBranding['backgroundGradient'];
+  backgroundImageUrl?: string;
+  description?: string;
+  socialLinks?: UserBranding['socialLinks'];
+  showAffiliateBadge?: boolean;
+  customAffiliateText?: string;
+}
+
+/**
+ * Enhanced response for preview page endpoint
+ * Contains link data + user branding for single API call
+ */
+export interface LinkPreviewResponse {
+  // Link data
+  link: {
+    hash: string;
+    originalUrl: string;
+    tag?: string;
+    amazonTagId?: string;
+    channelId?: string;
+    source?: string;
+    isActive: boolean;
+    expiresAt?: string;
+    createdAt: string;
+  };
+  // User branding data
+  branding: UserBrandingResponse;
+  // Owner information (minimal for privacy)
+  owner: {
+    displayName?: string; // Falls back to firstName, name, or "Afflyt Creator"
+  };
+}
+
+// ===== VALIDATION CONSTANTS =====
+
+/**
+ * Supported background types for branding
+ */
+export const BACKGROUND_TYPES = ['solid', 'gradient', 'image'] as const;
+
+/**
+ * Supported gradient directions
+ */
+export const GRADIENT_DIRECTIONS = ['to-r', 'to-br', 'to-b', 'to-bl'] as const;
+
+/**
+ * Validation limits for branding fields
+ */
+export const BRANDING_LIMITS = {
+  displayName: { min: 1, max: 50 },
+  description: { min: 1, max: 200 },
+  customAffiliateText: { min: 10, max: 300 },
+  logoUrl: { max: 500 },
+  backgroundImageUrl: { max: 500 },
+  socialUrls: { max: 500 }
+} as const;
+
+/**
+ * Default branding values
+ */
+export const DEFAULT_BRANDING: Partial<UserBranding> = {
+  showAffiliateBadge: true,
+  customAffiliateText: "In qualità di Affiliato Amazon, ricevo un guadagno dagli acquisti idonei.",
+  themeColor: "#FF6B35", // Afflyt brand color
+  backgroundType: "solid",
+  backgroundColor: "#ffffff"
+} as const;

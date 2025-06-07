@@ -1,6 +1,8 @@
+// ===== 🔧 UPDATED linkRoutes.ts - Remove Old Redirect System =====
+
 import { Router } from 'express';
 import { LinkController } from '../controllers/linkController';
-import { authenticateJWT, authenticateApiKey, optionalAuth } from '../middleware/auth';
+import { authenticateJWT, authenticateApiKey } from '../middleware/auth';
 import { 
   createConditionalAPILimiter, 
   createConditionalGeneralLimiter 
@@ -13,14 +15,13 @@ export const createLinkRoutes = (models: Models): Router => {
   const router = Router();
   const linkController = new LinkController(models);
   
-  // ===== 🚀 NEW v1.8.1: CONDITIONAL RATE LIMITERS =====
+  // ===== 🚀 v1.8.1: CONDITIONAL RATE LIMITERS =====
   const apiLimiter = createConditionalAPILimiter();
   const generalLimiter = createConditionalGeneralLimiter();
 
   // ===== 🔒 v1.8.5: ZOD VALIDATION + RATE LIMITING =====
 
   // ===== PROTECTED ROUTES (JWT Required) =====
-  // Apply API rate limiting to link creation and data-intensive operations
   router.post('/', 
     authenticateJWT(models), 
     apiLimiter, 
@@ -53,7 +54,6 @@ export const createLinkRoutes = (models: Models): Router => {
   );
 
   // ===== API KEY ROUTES (External Integrations) =====
-  // Higher rate limiting for external API access
   router.post('/api', 
     authenticateApiKey(models), 
     apiLimiter, 
@@ -88,21 +88,15 @@ export const createLinkRoutes = (models: Models): Router => {
   return router;
 };
 
-export const createRedirectRoutes = (models: Models): Router => {
-  const router = Router();
-  const linkController = new LinkController(models);
-  
-  // ===== 🚀 NEW v1.8.1: CONDITIONAL RATE LIMITER FOR REDIRECTS =====
-  const redirectLimiter = createConditionalGeneralLimiter();
+// ===== 🗑️ REMOVED: createRedirectRoutes =====
+// The old redirect system has been completely removed and replaced with:
+// - GET /api/public/links/:hash for preview page data
+// - POST /api/public/track/click for click tracking  
+// - GET /api/public/redirect/:hash for backward compatibility
 
-  // ===== PUBLIC REDIRECT ROUTE =====
-  // Apply general rate limiting to prevent redirect abuse
-  // Note: This is critical for preventing DDoS on redirect endpoints
-  router.get('/:hash', 
-    redirectLimiter, 
-    validateParams(validationSchemas.paramHash), 
-    linkController.redirect
-  );
-
-  return router;
-};
+// ===== 📝 MIGRATION NOTE =====
+// Old endpoint: GET /r/:hash (302 redirect) - REMOVED for compliance
+// New system:
+// 1. Next.js page /r/[hash] calls GET /api/public/links/:hash for data
+// 2. Preview page calls POST /api/public/track/click for analytics
+// 3. User clicks button → direct link to Amazon (no intermediate redirect)
