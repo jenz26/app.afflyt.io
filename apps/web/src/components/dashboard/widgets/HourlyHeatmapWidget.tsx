@@ -5,12 +5,30 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Clock, TrendingUp, AlertCircle, Calendar } from 'lucide-react';
 
-// Types for heatmap data
+// Types for heatmap data (updated to match backend)
 interface HourlyData {
   hour: number;
   day: number;
   clicks: number;
+  uniqueClicks: number;
   intensity: number; // 0-1 for color intensity
+}
+
+interface BackendHeatmapResponse {
+  success: boolean;
+  data: {
+    data: HourlyData[];
+    totalClicks: number;
+    maxClicks: number;
+    peakHour: number;
+    peakDay: number;
+    period: string;
+    dateRange: {
+      startDate: string;
+      endDate: string;
+    };
+  };
+  timestamp: string;
 }
 
 interface HeatmapData {
@@ -19,6 +37,7 @@ interface HeatmapData {
   totalClicks: number;
   peakHour: number;
   peakDay: number;
+  isLiveData: boolean;
 }
 
 // Days of week in Italian
@@ -66,6 +85,11 @@ const HeatmapTooltip = ({
         <div className="text-blue-400">
           <span className="font-bold">{data.clicks.toLocaleString('it-IT')}</span> click
         </div>
+        {data.uniqueClicks !== undefined && (
+          <div className="text-green-400 text-xs">
+            {data.uniqueClicks.toLocaleString('it-IT')} unici
+          </div>
+        )}
       </div>
     </div>
   );
@@ -77,7 +101,7 @@ export const HourlyHeatmapWidget = () => {
   const [error, setError] = useState<string | null>(null);
   const [hoveredCell, setHoveredCell] = useState<HourlyData | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-  const { getAuthenticatedApiClient } = useAuth();
+  const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
   useEffect(() => {
     const fetchHeatmapData = async () => {
@@ -87,27 +111,79 @@ export const HourlyHeatmapWidget = () => {
 
         const apiClient = getAuthenticatedApiClient();
         if (!apiClient) {
-          setError('Not authenticated');
+          console.log('HourlyHeatmapWidget: No API client available, using mock data');
+          const mockData = generateRealisticHeatmapData();
+          setData(mockData);
+          setIsLoading(false);
           return;
         }
 
-        // For now, we'll generate realistic mock data since the backend endpoint might not be implemented yet
-        // In production, this would be: const response = await apiClient.get('/api/user/analytics/hourly-heatmap');
-        
-        // Generate realistic mock data based on affiliate marketing patterns
-        const mockData = generateRealisticHeatmapData();
-        setData(mockData);
+        try {
+          console.log('HourlyHeatmapWidget: Calling backend endpoint...');
+          
+          // Call the real backend endpoint
+          const response = await apiClient.get('/api/user/analytics/hourly-heatmap?period=7d');
+          
+          console.log('HourlyHeatmapWidget: Raw response:', response);
+          
+          // Handle both direct response and wrapped response
+          let actualData = null;
+          if (response && typeof response === 'object') {
+            // Case 1: Wrapped response { success: true, data: { data: [...], ... } }
+            if ('success' in response && response.success && response.data) {
+              actualData = response.data;
+              console.log('HourlyHeatmapWidget: Found wrapped data');
+            }
+            // Case 2: Direct response { data: [...], totalClicks, ... }
+            else if ('data' in response && Array.isArray(response.data)) {
+              actualData = response;
+              console.log('HourlyHeatmapWidget: Found direct data');
+            }
+          }
+          
+          if (actualData && actualData.data && Array.isArray(actualData.data)) {
+            console.log('HourlyHeatmapWidget: Processing', actualData.data.length, 'data points');
+            const processedData = processBackendData(actualData);
+            setData(processedData);
+          } else {
+            console.log('HourlyHeatmapWidget: Invalid response format, using mock data');
+            const mockData = generateRealisticHeatmapData();
+            setData(mockData);
+          }
+          
+        } catch (backendError: any) {
+          console.log('HourlyHeatmapWidget: Backend call failed, using mock data:', backendError?.message);
+          const mockData = generateRealisticHeatmapData();
+          setData(mockData);
+        }
 
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch heatmap data');
-        console.error('Error fetching heatmap data:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch heatmap data';
+        console.error('HourlyHeatmapWidget: General error:', errorMessage);
+        setError(errorMessage);
+        
+        // Final fallback to mock data
+        const mockData = generateRealisticHeatmapData();
+        setData(mockData);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchHeatmapData();
-  }, [getAuthenticatedApiClient]);
+  }, [getAuthenticatedApiClient, isLoggedIn]);
+
+  // Process backend data to match our interface
+  const processBackendData = (backendData: any): HeatmapData => {
+    return {
+      data: backendData.data || [],
+      totalClicks: backendData.totalClicks || 0,
+      maxClicks: backendData.maxClicks || 0,
+      peakHour: backendData.peakHour || 0,
+      peakDay: backendData.peakDay || 0,
+      isLiveData: true
+    };
+  };
 
   // Generate realistic heatmap data
   const generateRealisticHeatmapData = (): HeatmapData => {
@@ -142,10 +218,13 @@ export const HourlyHeatmapWidget = () => {
           (0.8 + Math.random() * 0.4) // Add some randomness
         );
 
+        const uniqueClicks = Math.floor(clicks * (0.7 + Math.random() * 0.3));
+
         data.push({
           hour,
           day,
           clicks,
+          uniqueClicks,
           intensity: 0 // Will be calculated below
         });
 
@@ -171,7 +250,8 @@ export const HourlyHeatmapWidget = () => {
       maxClicks,
       totalClicks,
       peakHour,
-      peakDay
+      peakDay,
+      isLiveData: false
     };
   };
 
@@ -238,8 +318,15 @@ export const HourlyHeatmapWidget = () => {
             <Clock className="h-6 w-6 text-orange-400" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">Heatmap Orari</h3>
-            <p className="text-sm text-gray-400">Pattern di attività settimanale</p>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              Heatmap Orari
+              {/* Indicatore stato dati */}
+              <div className={`w-2 h-2 rounded-full ${data.isLiveData ? 'bg-green-500' : 'bg-yellow-500'}`} 
+                   title={data.isLiveData ? 'Dati live dal database' : 'Dati mock (fallback)'}></div>
+            </h3>
+            <p className="text-sm text-gray-400">
+              Pattern di attività settimanale {data.isLiveData ? '(live)' : '(demo)'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium bg-orange-500/20 text-orange-400 border border-orange-500/30">

@@ -253,16 +253,29 @@ export class AnalyticsController {
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
+      const { startDate, endDate, linkId, subId } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        startDate, 
+        endDate, 
+        linkId, 
+        subId 
+      }, 'Browser distribution request started');
+
+      // Get browser distribution from click model
+      const browserData = await this.models.click.getBrowserDistribution(user.id);
       
-      analyticsLogger.debug({ userId: user.id }, 'Browser distribution request started (mock data)');
+      // Calculate total clicks for percentage calculation
+      const totalClicks = browserData.reduce((sum: number, item: { clicks: number }) => sum + item.clicks, 0);
       
-      // For now return mock data, we'll implement logic in click model later
-      const distribution = [
-        { label: 'Chrome', value: 45, percentage: 65.2 },
-        { label: 'Safari', value: 15, percentage: 21.7 },
-        { label: 'Firefox', value: 6, percentage: 8.7 },
-        { label: 'Edge', value: 3, percentage: 4.4 }
-      ];
+      // Transform data to match frontend expectations (with percentage)
+      const distribution = browserData.map((item: { browser: string; clicks: number }) => ({
+        label: item.browser,
+        value: item.clicks,
+        percentage: totalClicks > 0 ? Math.round((item.clicks / totalClicks) * 100 * 10) / 10 : 0
+      }));
 
       const responseData = { distribution };
 
@@ -284,17 +297,29 @@ export class AnalyticsController {
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
+      const { startDate, endDate, linkId, subId } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        startDate, 
+        endDate, 
+        linkId, 
+        subId 
+      }, 'Referer distribution request started');
+
+      // Get referer distribution from click model
+      const refererData = await this.models.click.getRefererDistribution(user.id);
       
-      analyticsLogger.debug({ userId: user.id }, 'Referer distribution request started (mock data)');
+      // Calculate total clicks for percentage calculation
+      const totalClicks = refererData.reduce((sum: number, item: { clicks: number }) => sum + item.clicks, 0);
       
-      // For now return mock data
-      const distribution = [
-        { label: 'Telegram', value: 35, percentage: 42.2 },
-        { label: 'Instagram', value: 20, percentage: 24.1 },
-        { label: 'Direct', value: 15, percentage: 18.1 },
-        { label: 'YouTube', value: 8, percentage: 9.6 },
-        { label: 'Other', value: 5, percentage: 6.0 }
-      ];
+      // Transform data to match frontend expectations (with percentage)
+      const distribution = refererData.map((item: { referer: string; clicks: number }) => ({
+        label: item.referer,
+        value: item.clicks,
+        percentage: totalClicks > 0 ? Math.round((item.clicks / totalClicks) * 100 * 10) / 10 : 0
+      }));
 
       const responseData = { distribution };
 
@@ -316,17 +341,29 @@ export class AnalyticsController {
     
     try {
       const user = req.user!;
+      // ✅ Query parameters already validated by Zod middleware
+      const { startDate, endDate, linkId, subId } = req.query;
+
+      analyticsLogger.debug({ 
+        userId: user.id, 
+        startDate, 
+        endDate, 
+        linkId, 
+        subId 
+      }, 'SubId distribution request started');
+
+      // Get subId distribution from click model
+      const subIdData = await this.models.click.getSubIdDistribution(user.id);
       
-      analyticsLogger.debug({ userId: user.id }, 'SubID distribution request started (mock data)');
+      // Calculate total clicks for percentage calculation
+      const totalClicks = subIdData.reduce((sum: number, item: { clicks: number }) => sum + item.clicks, 0);
       
-      // For now return mock data
-      const distribution = [
-        { label: 'telegram_channel_main', value: 25, percentage: 35.7 },
-        { label: 'instagram_story', value: 18, percentage: 25.7 },
-        { label: 'youtube_desc', value: 12, percentage: 17.1 },
-        { label: 'twitter_bio', value: 8, percentage: 11.4 },
-        { label: 'email_newsletter', value: 7, percentage: 10.0 }
-      ];
+      // Transform data to match frontend expectations (with percentage)
+      const distribution = subIdData.map((item: { subId: string; clicks: number }) => ({
+        label: item.subId,
+        value: item.clicks,
+        percentage: totalClicks > 0 ? Math.round((item.clicks / totalClicks) * 100 * 10) / 10 : 0
+      }));
 
       const responseData = { distribution };
 
@@ -341,7 +378,7 @@ export class AnalyticsController {
       sendInternalError(res);
     }
   };
-
+  
   // GET /api/user/analytics/hourly-heatmap
   getHourlyHeatmap = async (req: HeatmapQueryRequest, res: Response): Promise<void> => {
     const startTime = Date.now();

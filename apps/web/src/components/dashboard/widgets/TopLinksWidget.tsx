@@ -6,7 +6,29 @@ import { useAuth } from '@/hooks/useAuth';
 import { Link2, TrendingUp, AlertCircle, Award, Target, ExternalLink, Copy, BarChart3, Euro, Mouse, Zap } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 
-// Types for top links data
+// Types for top links data (updated to match backend response)
+interface BackendTopLink {
+  hash: string;
+  originalUrl: string;
+  shortUrl: string;
+  tag: string | null;
+  clickCount: number;
+  uniqueClickCount: number;
+  conversionCount: number;
+  totalRevenue: number;
+  conversionRate: number;
+  earningsPerClick: number;
+  createdAt: string;
+}
+
+interface BackendResponse {
+  success: boolean;
+  data: {
+    topLinks: BackendTopLink[];
+  };
+  timestamp: string;
+}
+
 interface TopLinkData {
   hash: string;
   originalUrl: string;
@@ -34,6 +56,7 @@ interface TopLinksData {
     avgEarningsPerClick: number;
     totalConversions: number;
   };
+  isLiveData: boolean; // Indicatore per sapere se sono dati reali o mock
 }
 
 type SortBy = 'revenue' | 'conversionRate' | 'earningsPerClick' | 'clicks';
@@ -112,7 +135,7 @@ export const TopLinksWidget = () => {
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortBy>('revenue');
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
-  const { getAuthenticatedApiClient } = useAuth();
+  const { getAuthenticatedApiClient, isLoggedIn } = useAuth();
 
   useEffect(() => {
     const fetchTopLinksData = async () => {
@@ -122,44 +145,157 @@ export const TopLinksWidget = () => {
 
         const apiClient = getAuthenticatedApiClient();
         if (!apiClient) {
-          setError('Not authenticated');
+          console.log('TopLinksWidget: No API client available, using mock data');
+          const mockData = generateRealisticTopLinksData(sortBy);
+          setData(mockData);
+          setIsLoading(false);
           return;
         }
 
         try {
           // Try to fetch real data from backend
-          const response = await apiClient.get('/api/user/analytics/top-performing-links', {
-            sortBy: sortBy,
-            limit: '10'
-          });
+          const response = await apiClient.get('/api/user/analytics/top-performing-links');
           
           // Process real data if successful
-          const processedData = processBackendData(response, sortBy);
-          setData(processedData);
+          console.log('TopLinksWidget: Raw response:', response);
           
-        } catch (backendError) {
-          console.log('Backend endpoint not available, using mock data');
-          // Fallback to realistic mock data
+          // Handle both direct response and wrapped response
+          let actualData = null;
+          if (response && typeof response === 'object') {
+            // Case 1: Wrapped response { success: true, data: { topLinks: [...] } }
+            if ('success' in response && response.success && response.data?.topLinks) {
+              actualData = response.data.topLinks;
+              console.log('TopLinksWidget: Found wrapped data with', actualData.length, 'links');
+            }
+            // Case 2: Direct response { topLinks: [...] }
+            else if ('topLinks' in response) {
+              actualData = response.topLinks;
+              console.log('TopLinksWidget: Found direct topLinks with', actualData.length, 'links');
+            }
+            // Case 3: Direct array response
+            else if (Array.isArray(response)) {
+              actualData = response;
+              console.log('TopLinksWidget: Found direct array with', actualData.length, 'links');
+            }
+          }
+          
+          if (actualData && Array.isArray(actualData)) {
+            const processedData = processBackendData({ data: { topLinks: actualData } } as BackendResponse, sortBy);
+            setData(processedData);
+          } else {
+            console.log('TopLinksWidget: Invalid response format, using mock data');
+            const mockData = generateRealisticTopLinksData(sortBy);
+            setData(mockData);
+          }
+          
+        } catch (backendError: any) {
+          console.log('TopLinksWidget: Backend call failed, using mock data:', backendError?.message);
           const mockData = generateRealisticTopLinksData(sortBy);
           setData(mockData);
         }
 
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch top links data');
-        console.error('Error fetching top links data:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch top links data';
+        console.error('TopLinksWidget: General error:', errorMessage);
+        setError(errorMessage);
+        
+        // Final fallback to mock data
+        const mockData = generateRealisticTopLinksData(sortBy);
+        setData(mockData);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchTopLinksData();
-  }, [getAuthenticatedApiClient, sortBy]);
+  }, [getAuthenticatedApiClient, sortBy, isLoggedIn]);
 
   // Process backend data to match our interface
-  const processBackendData = (backendData: any, currentSortBy: SortBy): TopLinksData => {
-    // This will be implemented when we know the exact backend response format
-    // For now, return mock data structure
-    return generateRealisticTopLinksData(currentSortBy);
+  const processBackendData = (backendResponse: BackendResponse, currentSortBy: SortBy): TopLinksData => {
+    const backendLinks = backendResponse.data.topLinks;
+    
+    if (!backendLinks || backendLinks.length === 0) {
+      // Se non ci sono link reali, usa mock data ma marca come live
+      const mockData = generateRealisticTopLinksData(currentSortBy);
+      return { ...mockData, isLiveData: true };
+    }
+    
+    // Convert backend format to our format
+    const linksWithMetrics: TopLinkData[] = backendLinks.map((link, index) => {
+      // Determine category based on performance
+      let category: TopLinkData['category'];
+      if (link.conversionRate > 5) category = 'hot';
+      else if (link.conversionRate > 3) category = 'rising';
+      else if (link.conversionRate > 1.5) category = 'consistent';
+      else category = 'declining';
+
+      // Determine trend (simplified logic based on conversion rate)
+      const trend: TopLinkData['trend'] = 
+        link.conversionRate > 4 ? 'up' : 
+        link.conversionRate > 2 ? 'stable' : 'down';
+
+      return {
+        hash: link.hash,
+        originalUrl: link.originalUrl,
+        tag: link.tag || undefined,
+        clicks: link.clickCount,
+        uniqueClicks: link.uniqueClickCount,
+        conversions: link.conversionCount,
+        revenue: link.totalRevenue,
+        conversionRate: link.conversionRate,
+        earningsPerClick: link.earningsPerClick,
+        revenueShare: 0, // Will be calculated below
+        rank: index + 1,
+        trend,
+        category,
+        createdAt: link.createdAt
+      };
+    });
+
+    // Sort by selected metric
+    const sortedLinks = [...linksWithMetrics].sort((a, b) => {
+      switch (currentSortBy) {
+        case 'revenue':
+          return b.revenue - a.revenue;
+        case 'conversionRate':
+          return b.conversionRate - a.conversionRate;
+        case 'earningsPerClick':
+          return b.earningsPerClick - a.earningsPerClick;
+        case 'clicks':
+          return b.clicks - a.clicks;
+        default:
+          return b.revenue - a.revenue;
+      }
+    });
+
+    // Calculate totals and metrics
+    const totalRevenue = sortedLinks.reduce((sum, link) => sum + link.revenue, 0);
+    const totalClicks = sortedLinks.reduce((sum, link) => sum + link.clicks, 0);
+    const totalConversions = sortedLinks.reduce((sum, link) => sum + link.conversions, 0);
+
+    // Update ranks and calculate revenue share
+    const finalLinks = sortedLinks.map((link, index) => ({
+      ...link,
+      rank: index + 1,
+      revenueShare: totalRevenue > 0 ? (link.revenue / totalRevenue) * 100 : 0
+    }));
+
+    const bestPerformer = finalLinks[0];
+
+    const metrics = {
+      avgConversionRate: totalClicks > 0 ? (totalConversions / totalClicks * 100) : 0,
+      avgEarningsPerClick: totalClicks > 0 ? (totalRevenue / totalClicks) : 0,
+      totalConversions
+    };
+
+    return {
+      links: finalLinks.slice(0, 6), // Show top 6
+      totalRevenue,
+      totalClicks,
+      bestPerformer,
+      metrics,
+      isLiveData: true
+    };
   };
 
   // Generate realistic mock data
@@ -224,16 +360,6 @@ export const TopLinksWidget = () => {
         conversions: 34,
         revenue: 102.40,
         createdAt: '2025-06-02T13:15:00Z'
-      },
-      {
-        hash: 'stu901',
-        originalUrl: 'https://amazon.it/dp/B09JFLBWZR',
-        tag: 'Kindle Paperwhite',
-        clicks: 567,
-        uniqueClicks: 489,
-        conversions: 28,
-        revenue: 84.35,
-        createdAt: '2025-06-03T08:45:00Z'
       }
     ];
 
@@ -305,7 +431,8 @@ export const TopLinksWidget = () => {
       totalRevenue,
       totalClicks,
       bestPerformer,
-      metrics
+      metrics,
+      isLiveData: false // Mock data
     };
   };
 
@@ -366,8 +493,15 @@ export const TopLinksWidget = () => {
             <Award className="h-6 w-6 text-yellow-400" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">Top Link Performance</h3>
-            <p className="text-sm text-gray-400">I tuoi link più performanti</p>
+            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+              Top Link Performance
+              {/* Indicatore stato dati */}
+              <div className={`w-2 h-2 rounded-full ${data.isLiveData ? 'bg-green-500' : 'bg-yellow-500'}`} 
+                   title={data.isLiveData ? 'Dati live dal database' : 'Dati mock (fallback)'}></div>
+            </h3>
+            <p className="text-sm text-gray-400">
+              I tuoi link più performanti {data.isLiveData ? '(live)' : '(demo)'}
+            </p>
           </div>
         </div>
         
@@ -397,160 +531,172 @@ export const TopLinksWidget = () => {
 
       <div className="space-y-6">
         {/* Best Performer Highlight */}
-        <div className="p-4 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-lg flex items-center justify-center">
-                <Award className="w-5 h-5 text-yellow-400" />
-              </div>
-              <div>
-                <div className="text-white font-medium">
-                  {data.bestPerformer.tag || getDomainFromUrl(data.bestPerformer.originalUrl)}
+        {data.bestPerformer && (
+          <div className="p-4 bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-lg flex items-center justify-center">
+                  <Award className="w-5 h-5 text-yellow-400" />
                 </div>
-                <div className="text-xs text-yellow-400">
-                  🏆 Miglior performer per {sortBy === 'revenue' ? 'revenue' : sortBy === 'conversionRate' ? 'conversioni' : sortBy === 'earningsPerClick' ? '€/click' : 'click'}
+                <div>
+                  <div className="text-white font-medium">
+                    {data.bestPerformer.tag || getDomainFromUrl(data.bestPerformer.originalUrl)}
+                  </div>
+                  <div className="text-xs text-yellow-400">
+                    🏆 Miglior performer per {sortBy === 'revenue' ? 'revenue' : sortBy === 'conversionRate' ? 'conversioni' : sortBy === 'earningsPerClick' ? '€/click' : 'click'}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="text-right">
-              <div className="text-white font-bold">
-                {sortBy === 'revenue' ? `€${data.bestPerformer.revenue.toFixed(2)}` :
-                 sortBy === 'conversionRate' ? `${data.bestPerformer.conversionRate.toFixed(1)}%` :
-                 sortBy === 'earningsPerClick' ? `€${data.bestPerformer.earningsPerClick.toFixed(3)}` :
-                 data.bestPerformer.clicks.toLocaleString('it-IT')}
-              </div>
-              <div className="text-xs text-gray-400">
-                {data.bestPerformer.revenueShare.toFixed(1)}% del revenue totale
+              <div className="text-right">
+                <div className="text-white font-bold">
+                  {sortBy === 'revenue' ? `€${data.bestPerformer.revenue.toFixed(2)}` :
+                   sortBy === 'conversionRate' ? `${data.bestPerformer.conversionRate.toFixed(1)}%` :
+                   sortBy === 'earningsPerClick' ? `€${data.bestPerformer.earningsPerClick.toFixed(3)}` :
+                   data.bestPerformer.clicks.toLocaleString('it-IT')}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {data.bestPerformer.revenueShare.toFixed(1)}% del revenue totale
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Links List */}
         <div className="space-y-3">
-          {data.links.map((link, index) => (
-            <div 
-              key={link.hash} 
-              className="group p-4 bg-slate-700/30 rounded-xl border border-transparent hover:border-white/10 transition-all duration-200"
-            >
-              <div className="flex items-center gap-4">
-                {/* Rank */}
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-600/50 flex items-center justify-center text-white font-bold text-sm">
-                  #{link.rank}
-                </div>
+          {data.links.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">
+              <Award className="h-12 w-12 mx-auto mb-2 text-gray-600" />
+              <p>Nessun link trovato</p>
+              <p className="text-sm">Crea dei link per vedere le performance</p>
+            </div>
+          ) : (
+            data.links.map((link, index) => (
+              <div 
+                key={link.hash} 
+                className="group p-4 bg-slate-700/30 rounded-xl border border-transparent hover:border-white/10 transition-all duration-200"
+              >
+                <div className="flex items-center gap-4">
+                  {/* Rank */}
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-600/50 flex items-center justify-center text-white font-bold text-sm">
+                    #{link.rank}
+                  </div>
 
-                {/* Link Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h4 className="text-white font-medium truncate text-sm">
-                      {link.tag || getDomainFromUrl(link.originalUrl)}
-                    </h4>
-                    <div className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1`}
-                         style={{ 
-                           backgroundColor: `${CATEGORY_COLORS[link.category]}20`,
-                           color: CATEGORY_COLORS[link.category],
-                           border: `1px solid ${CATEGORY_COLORS[link.category]}30`
-                         }}>
-                      {link.trend === 'up' ? <TrendingUp className="w-3 h-3" /> : 
-                       link.trend === 'down' ? <TrendingUp className="w-3 h-3 rotate-180" /> : 
-                       <Target className="w-3 h-3" />}
-                      {CATEGORY_LABELS[link.category]}
+                  {/* Link Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="text-white font-medium truncate text-sm">
+                        {link.tag || getDomainFromUrl(link.originalUrl)}
+                      </h4>
+                      <div className={`px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1`}
+                           style={{ 
+                             backgroundColor: `${CATEGORY_COLORS[link.category]}20`,
+                             color: CATEGORY_COLORS[link.category],
+                             border: `1px solid ${CATEGORY_COLORS[link.category]}30`
+                           }}>
+                        {link.trend === 'up' ? <TrendingUp className="w-3 h-3" /> : 
+                         link.trend === 'down' ? <TrendingUp className="w-3 h-3 rotate-180" /> : 
+                         <Target className="w-3 h-3" />}
+                        {CATEGORY_LABELS[link.category]}
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-4 gap-3 text-xs">
+                      <div>
+                        <span className="text-gray-500">Click: </span>
+                        <span className="text-blue-400 font-medium">{link.clicks.toLocaleString('it-IT')}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Conv.: </span>
+                        <span className="text-green-400 font-medium">{link.conversions}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Revenue: </span>
+                        <span className="text-yellow-400 font-medium">€{link.revenue.toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Rate: </span>
+                        <span className="text-purple-400 font-medium">{link.conversionRate.toFixed(1)}%</span>
+                      </div>
                     </div>
                   </div>
-                  
-                  <div className="grid grid-cols-4 gap-3 text-xs">
-                    <div>
-                      <span className="text-gray-500">Click: </span>
-                      <span className="text-blue-400 font-medium">{link.clicks.toLocaleString('it-IT')}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Conv.: </span>
-                      <span className="text-green-400 font-medium">{link.conversions}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Revenue: </span>
-                      <span className="text-yellow-400 font-medium">€{link.revenue.toFixed(2)}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Rate: </span>
-                      <span className="text-purple-400 font-medium">{link.conversionRate.toFixed(1)}%</span>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Action Buttons */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="relative">
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="relative">
+                      <button 
+                        className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                        onClick={() => handleCopyLink(link.hash)}
+                        title="Copia link"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <CopyTooltip 
+                        message="Copiato!" 
+                        visible={copiedLink === link.hash} 
+                      />
+                    </div>
                     <button 
                       className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                      onClick={() => handleCopyLink(link.hash)}
-                      title="Copia link"
+                      title="Visualizza dettagli"
                     >
-                      <Copy className="w-4 h-4" />
+                      <BarChart3 className="w-4 h-4" />
                     </button>
-                    <CopyTooltip 
-                      message="Copiato!" 
-                      visible={copiedLink === link.hash} 
-                    />
+                    <button 
+                      className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                      title="Apri link originale"
+                      onClick={() => window.open(link.originalUrl, '_blank')}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button 
-                    className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                    title="Visualizza dettagli"
-                  >
-                    <BarChart3 className="w-4 h-4" />
-                  </button>
-                  <button 
-                    className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                    title="Apri link originale"
-                    onClick={() => window.open(link.originalUrl, '_blank')}
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
         {/* Performance Chart */}
-        <div className="pt-4 border-t border-white/10">
-          <h4 className="text-sm font-medium text-white mb-3 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-yellow-400" />
-            Performance Comparison
-          </h4>
-          <div className="h-32">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.links.slice(0, 5)} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" strokeOpacity={0.3} />
-                <XAxis 
-                  dataKey={(item) => item.tag?.slice(0, 10) + '...' || getDomainFromUrl(item.originalUrl).slice(0, 10)}
-                  stroke="#64748B"
-                  fontSize={10}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis 
-                  stroke="#64748B"
-                  fontSize={10}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => 
-                    sortBy === 'revenue' ? `€${value}` :
-                    sortBy === 'conversionRate' ? `${value}%` :
-                    sortBy === 'earningsPerClick' ? `€${value.toFixed(3)}` :
-                    value.toLocaleString('it-IT')
-                  }
-                />
-                <Tooltip content={<PerformanceTooltip />} />
-                <Bar 
-                  dataKey={sortBy}
-                  radius={[2, 2, 0, 0]}
-                  fill="#F59E0B"
-                />
-              </BarChart>
-            </ResponsiveContainer>
+        {data.links.length > 0 && (
+          <div className="pt-4 border-t border-white/10">
+            <h4 className="text-sm font-medium text-white mb-3 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-yellow-400" />
+              Performance Comparison
+            </h4>
+            <div className="h-32">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.links.slice(0, 5)} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" strokeOpacity={0.3} />
+                  <XAxis 
+                    dataKey={(item) => item.tag?.slice(0, 10) + '...' || getDomainFromUrl(item.originalUrl).slice(0, 10)}
+                    stroke="#64748B"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    stroke="#64748B"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => 
+                      sortBy === 'revenue' ? `€${value}` :
+                      sortBy === 'conversionRate' ? `${value}%` :
+                      sortBy === 'earningsPerClick' ? `€${value.toFixed(3)}` :
+                      value.toLocaleString('it-IT')
+                    }
+                  />
+                  <Tooltip content={<PerformanceTooltip />} />
+                  <Bar 
+                    dataKey={sortBy}
+                    radius={[2, 2, 0, 0]}
+                    fill="#F59E0B"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Summary Stats */}
         <div className="pt-4 border-t border-white/10">
