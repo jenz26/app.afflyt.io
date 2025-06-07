@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useClientI18n } from '@/lib/i18n/useClientI18n';
 import { useStats } from '@/hooks/useApi';
+import { useAuth } from '@/hooks/useAuth';
+import Link from 'next/link';
 import { Navbar } from '@/components/navbar';
 import { Footer } from '@/components/footer';
 import { 
@@ -45,35 +47,7 @@ const mockRecentLinks = [
   { id: 3, title: "AirPods Pro 2", clicks: 67, created: "2d fa", status: "active" }
 ];
 
-const upcomingFeatures = [
-  { 
-    icon: <MessageSquare className="w-5 h-5" />, 
-    title: "Automazione Telegram", 
-    status: "coming_soon", 
-    description: "Post automatici nei tuoi canali" 
-  },
-  { 
-    icon: <Target className="w-5 h-5" />, 
-    title: "A/B Test Messaggi", 
-    status: "testing", 
-    description: "Testa diverse versioni dei tuoi post" 
-  },
-  { 
-    icon: <Globe className="w-5 h-5" />, 
-    title: "Cross-Platform", 
-    status: "roadmap", 
-    description: "IG, Discord, Facebook in un click" 
-  }
-];
-
-// Mock user data
-const mockUser = {
-  name: "Mario Rossi",
-  email: "mario@creator.com",
-  id: "user123"
-};
-
-// Animated Background Component (same as homepage)
+// Animated Background Component
 const AnimatedBackground: React.FC = () => {
   const [particles, setParticles] = useState<Array<{left: string, top: string, delay: string, duration: string}>>([]);
 
@@ -113,9 +87,18 @@ const AnimatedBackground: React.FC = () => {
   );
 };
 
-// Hero Section Component
+// Hero Section Component - ✅ AGGIORNATO con CTA collegati
 const HeroSection: React.FC = () => {
   const { t } = useTranslation('common');
+  const { isLoggedIn } = useAuth();
+  const pathname = usePathname();
+  const currentLocale = pathname.split('/')[1] || 'it';
+
+  // Helper per creare link con locale
+  const createLink = (path: string) => {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `/${currentLocale}${cleanPath}`;
+  };
   
   return (
     <section className="relative z-10 pt-16 pb-12">
@@ -143,17 +126,46 @@ const HeroSection: React.FC = () => {
             {t('hero_subtitle')}
           </p>
 
+          {/* ✅ CTA AGGIORNATI con logica utente loggato/non loggato */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <button className="group inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl text-lg font-semibold hover:from-pink-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl hover:scale-105">
-              <Plus className="w-5 h-5" />
-              {t('hero_cta_primary')}
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </button>
-            
-            <button className="inline-flex items-center gap-2 px-8 py-4 border border-white/20 text-white rounded-xl text-lg hover:bg-white/10 transition-all">
-              <Play className="w-5 h-5" />
-              {t('hero_cta_secondary_improved')}
-            </button>
+            {isLoggedIn ? (
+              // Utente loggato - porta alla dashboard/create
+              <>
+                <Link
+                  href={createLink('/dashboard/create')}
+                  className="group inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl text-lg font-semibold hover:from-pink-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl hover:scale-105"
+                >
+                  <Plus className="w-5 h-5" />
+                  {t('hero_cta_primary')}
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </Link>
+                
+                <Link
+                  href={createLink('/dashboard')}
+                  className="inline-flex items-center gap-2 px-8 py-4 border border-white/20 text-white rounded-xl text-lg hover:bg-white/10 transition-all"
+                >
+                  <BarChart3 className="w-5 h-5" />
+                  Vai alla Dashboard
+                </Link>
+              </>
+            ) : (
+              // Utente non loggato - porta al signin
+              <>
+                <Link
+                  href={createLink('/auth/signin')}
+                  className="group inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-xl text-lg font-semibold hover:from-pink-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl hover:scale-105"
+                >
+                  <Zap className="w-5 h-5" />
+                  Inizia Gratis
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </Link>
+                
+                <button className="inline-flex items-center gap-2 px-8 py-4 border border-white/20 text-white rounded-xl text-lg hover:bg-white/10 transition-all">
+                  <Play className="w-5 h-5" />
+                  {t('hero_cta_secondary_improved')}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -199,9 +211,18 @@ const StatsCard: React.FC<{
   );
 };
 
-// Recent Links Component
+// Recent Links Component - ✅ AGGIORNATO con link collegati
 const RecentLinksCard: React.FC = () => {
   const { t } = useTranslation('common');
+  const { isLoggedIn } = useAuth();
+  const pathname = usePathname();
+  const currentLocale = pathname.split('/')[1] || 'it';
+
+  // Helper per creare link con locale
+  const createLink = (path: string) => {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `/${currentLocale}${cleanPath}`;
+  };
   
   return (
     <div className="bg-slate-800/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
@@ -210,9 +231,13 @@ const RecentLinksCard: React.FC = () => {
           <Link2 className="w-5 h-5 text-blue-400" />
           {t('recent_links_title')}
         </h3>
-        <button className="text-blue-400 hover:text-blue-300 text-sm font-medium">
+        {/* ✅ AGGIORNATO con link corretto */}
+        <Link
+          href={isLoggedIn ? createLink('/dashboard/links') : createLink('/auth/signin')}
+          className="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors"
+        >
           {t('recent_links_view_all')}
-        </button>
+        </Link>
       </div>
       
       <div className="space-y-4">
@@ -231,6 +256,22 @@ const RecentLinksCard: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* ✅ AGGIUNTO CTA bottom */}
+      {!isLoggedIn && (
+        <div className="mt-6 p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl text-center">
+          <p className="text-gray-300 text-sm mb-3">
+            Vuoi vedere i tuoi link reali?
+          </p>
+          <Link
+            href={createLink('/auth/signin')}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Crea Account Gratis
+          </Link>
+        </div>
+      )}
     </div>
   );
 };
@@ -358,9 +399,18 @@ const QuickOverviewSection: React.FC = () => {
   );
 };
 
-// Upcoming Features Section
+// Upcoming Features Section - ✅ AGGIORNATO con link alle pagine teaser
 const UpcomingFeaturesSection: React.FC = () => {
   const { t } = useTranslation('common');
+  const { isLoggedIn } = useAuth();
+  const pathname = usePathname();
+  const currentLocale = pathname.split('/')[1] || 'it';
+
+  // Helper per creare link con locale
+  const createLink = (path: string) => {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `/${currentLocale}${cleanPath}`;
+  };
   
   const statusConfig = {
     coming_soon: { 
@@ -377,24 +427,28 @@ const UpcomingFeaturesSection: React.FC = () => {
     }
   };
 
+  // ✅ AGGIORNATO con link alle pagine teaser
   const features = [
     {
       icon: <MessageSquare className="w-6 h-6 text-white" />,
       title: t('feature_telegram_title'),
       description: t('feature_telegram_desc'),
-      status: 'coming_soon' as StatusType
+      status: 'coming_soon' as StatusType,
+      href: '/dashboard/telegram'
     },
     {
       icon: <Target className="w-6 h-6 text-white" />,
       title: t('feature_ab_test_title'),
       description: t('feature_ab_test_desc'),
-      status: 'testing' as StatusType
+      status: 'testing' as StatusType,
+      href: '/dashboard/ab-testing'
     },
     {
       icon: <Globe className="w-6 h-6 text-white" />,
       title: t('feature_cross_platform_title'),
       description: t('feature_cross_platform_desc'),
-      status: 'roadmap' as StatusType
+      status: 'roadmap' as StatusType,
+      href: '/dashboard/automations'
     }
   ];
 
@@ -413,30 +467,69 @@ const UpcomingFeaturesSection: React.FC = () => {
           
           <div className="grid md:grid-cols-3 gap-8">
             {features.map((feature, index) => (
-              <div key={index} className="p-6 bg-slate-800/50 backdrop-blur-xl border border-white/10 rounded-2xl hover:border-white/20 transition-all hover:scale-105">
+              // ✅ AGGIORNATO: ogni card è ora un link cliccabile
+              <Link
+                key={index}
+                href={isLoggedIn ? createLink(feature.href) : createLink('/auth/signin')}
+                className="group p-6 bg-slate-800/50 backdrop-blur-xl border border-white/10 rounded-2xl hover:border-white/20 transition-all hover:scale-105 cursor-pointer"
+              >
                 <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center">
+                  <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center group-hover:bg-white/20 transition-colors">
                     {feature.icon}
                   </div>
                   <span className={`px-3 py-1 text-xs font-medium rounded-full border ${statusConfig[feature.status as keyof typeof statusConfig].color}`}>
                     {statusConfig[feature.status as keyof typeof statusConfig].text}
                   </span>
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                <p className="text-gray-300 text-sm">{feature.description}</p>
-              </div>
+                <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-purple-300 transition-colors">
+                  {feature.title}
+                </h3>
+                <p className="text-gray-300 text-sm mb-4">{feature.description}</p>
+                
+                {/* ✅ AGGIUNTO: indicatore che è cliccabile */}
+                <div className="flex items-center gap-2 text-purple-400 group-hover:text-purple-300 transition-colors">
+                  <span className="text-sm font-medium">
+                    {isLoggedIn ? 'Scopri di più' : 'Accedi per dettagli'}
+                  </span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </Link>
             ))}
           </div>
+
+          {/* ✅ AGGIUNTO: CTA bottom per non loggati */}
+          {!isLoggedIn && (
+            <div className="mt-12 text-center">
+              <div className="p-8 bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-2xl max-w-2xl mx-auto">
+                <h3 className="text-white text-xl font-semibold mb-3">
+                  Vuoi essere il primo a provare queste funzionalità?
+                </h3>
+                <p className="text-gray-300 mb-6">
+                  Crea un account gratuito e ti avviseremo non appena saranno disponibili.
+                </p>
+                <Link
+                  href={createLink('/auth/signin')}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-medium rounded-lg transition-all hover:scale-105"
+                >
+                  <Zap className="w-5 h-5" />
+                  Registrati Gratis
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </section>
   );
 };
 
+// ✅ AGGIORNATO: Main component con useAuth hook
 export default function AppHomePage() {
   const { t } = useTranslation('common');
   const pathname = usePathname();
   const { data: stats, isLoading } = useStats();
+  const { isLoggedIn } = useAuth();
   
   useClientI18n();
 
@@ -454,6 +547,60 @@ export default function AppHomePage() {
         <HeroSection />
         <QuickOverviewSection />
         <UpcomingFeaturesSection />
+        
+        {/* ✅ AGGIUNTO: CTA finale bottom */}
+        <section className="relative z-10 py-20">
+          <div className="container mx-auto px-6">
+            <div className="max-w-4xl mx-auto text-center">
+              <h2 className="text-4xl font-bold text-white mb-6">
+                {isLoggedIn ? 'Pronto a creare il tuo prossimo link?' : 'Pronto a iniziare?'}
+              </h2>
+              <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
+                {isLoggedIn 
+                  ? 'Crea nuovi link affiliati e traccia le performance in tempo reale.'
+                  : 'Unisciti a migliaia di creators che stanno già guadagnando di più con Afflyt.'
+                }
+              </p>
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                {isLoggedIn ? (
+                  <>
+                    <Link
+                      href={`/${currentLocale}/dashboard/create`}
+                      className="group px-8 py-4 bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105 shadow-2xl hover:shadow-emerald-500/25 flex items-center gap-2"
+                    >
+                      <Plus className="w-5 h-5" />
+                      Crea Nuovo Link
+                      <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    </Link>
+                    <Link
+                      href={`/${currentLocale}/dashboard/analytics`}
+                      className="px-8 py-4 border border-white/20 text-white hover:bg-white/10 font-medium rounded-xl transition-all duration-300 hover:scale-105 flex items-center gap-2"
+                    >
+                      <BarChart3 className="w-5 h-5" />
+                      Vedi Analytics
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href={`/${currentLocale}/auth/signin`}
+                      className="group px-8 py-4 bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-700 hover:to-cyan-700 text-white font-semibold rounded-xl transition-all duration-300 hover:scale-105 shadow-2xl hover:shadow-emerald-500/25 flex items-center gap-2"
+                    >
+                      <Zap className="w-5 h-5" />
+                      Inizia Gratis Ora
+                      <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    </Link>
+                    <button className="px-8 py-4 border border-white/20 text-white hover:bg-white/10 font-medium rounded-xl transition-all duration-300 hover:scale-105 flex items-center gap-2">
+                      <Play className="w-5 h-5" />
+                      Guarda Demo
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
       
       {/* Footer */}

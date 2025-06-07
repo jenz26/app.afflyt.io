@@ -4,6 +4,7 @@ import { createAuthRoutes } from './authRoutes';
 import { createLinkRoutes, createRedirectRoutes } from './linkRoutes';
 import { createUserRoutes } from './userRoutes';
 import { createTrackingRoutes } from './trackingRoutes';
+import { createSupportRoutes } from './supportRoutes'; // ✨ NEW: Support Routes
 
 export const createRoutes = (models: Models): Router => {
   const router = Router();
@@ -18,8 +19,9 @@ export const createRoutes = (models: Models): Router => {
 export const createAPIRoutes = (models: Models): Router => {
   const router = Router();
 
-  // New API structure for v1.3.0
+  // New API structure for v1.3.0+
   router.use('/user', createUserRoutes(models));
+  router.use('/support', createSupportRoutes(models)); // ✨ NEW: Support Routes
 
   return router;
 };

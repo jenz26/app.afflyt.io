@@ -67,3 +67,4 @@ export interface UseTrendOptions {
   subId?: string;
   granularity?: TrendGranularity;
 }
+

@@ -93,6 +93,13 @@ const navigationItems = [
     href: '/dashboard/profile',
     icon: <User className="w-4 h-4" />,
     group: 'account'
+  },
+  // ✅ AGGIUNTO: Link alle Impostazioni
+  {
+    label: 'Impostazioni',
+    href: '/dashboard/settings',
+    icon: <Settings className="w-4 h-4" />,
+    group: 'account'
   }
 ];
 
@@ -281,10 +288,18 @@ export const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
                 <span>API Keys</span>
               </Link>
               
-              <button className="w-full flex items-center gap-2 p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-sm">
+              {/* ✅ AGGIORNATO: Link corretto alle Impostazioni */}
+              <Link
+                href={createLocalizedHref('/dashboard/settings')}
+                className="w-full flex items-center gap-2 p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors text-sm"
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  if (window.innerWidth < 1024) onClose();
+                }}
+              >
                 <Settings className="w-3 h-3" />
                 <span>Impostazioni</span>
-              </button>
+              </Link>
               
               <div className="border-t border-white/10 my-1"></div>
               

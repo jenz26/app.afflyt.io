@@ -499,4 +499,77 @@ export const validationSchemas = {
   listQuery: listQuerySchema
 };
 
+// ===== SUPPORT SCHEMAS =====
+
+/**
+ * Support subject validation
+ */
+export const supportSubjectSchema = z.enum(['technical', 'billing', 'feature', 'account', 'general'], {
+  errorMap: () => ({ message: 'Subject must be one of: technical, billing, feature, account, general' })
+});
+
+/**
+ * Create support ticket schema
+ * Validates incoming request from frontend contact form
+ */
+export const supportTicketSchema = z.object({
+  name: nonEmptyString
+    .max(100, 'Name must be less than 100 characters')
+    .regex(/^[a-zA-ZÀ-ÿ\s\-'\.]+$/, 'Name can only contain letters, spaces, hyphens, apostrophes, and dots'),
+  
+  email: emailSchema,
+  
+  subject: supportSubjectSchema,
+  
+  message: nonEmptyString
+    .min(10, 'Message must be at least 10 characters')
+    .max(5000, 'Message must be less than 5000 characters'),
+  
+  userId: trimmedString.optional(), // Optional - only if user is logged in
+  
+  timestamp: z.string().datetime('Invalid timestamp format'),
+  
+  userAgent: trimmedString
+    .max(500, 'User agent must be less than 500 characters')
+    .optional(),
+  
+  url: z.string()
+    .url('Invalid URL format')
+    .max(2000, 'URL must be less than 2000 characters')
+    .optional()
+});
+
+/**
+ * Update support ticket schema (for admin panel - future use)
+ */
+export const updateSupportTicketSchema = z.object({
+  status: z.enum(['open', 'in-progress', 'resolved', 'closed']).optional(),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  assignedTo: trimmedString.optional(),
+  internalNotes: trimmedString
+    .max(2000, 'Internal notes must be less than 2000 characters')
+    .optional()
+}).refine(data => {
+  // At least one field must be provided
+  return Object.values(data).some(value => value !== undefined && value !== '');
+}, {
+  message: 'At least one field must be provided for update'
+});
+
+/**
+ * Support tickets query schema (for admin panel - future use)
+ */
+export const supportTicketsQuerySchema = z.object({
+  status: z.enum(['open', 'in-progress', 'resolved', 'closed']).optional(),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  assignedTo: trimmedString.optional(),
+  subject: supportSubjectSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+  sortBy: z.enum(['submittedAt', 'status', 'priority', 'ticketNumber']).default('submittedAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  search: trimmedString.optional() // Search in name, email, or ticket number
+});
+
+
 export default validationSchemas;

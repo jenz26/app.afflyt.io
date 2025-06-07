@@ -334,3 +334,81 @@ export type ChannelType = typeof CHANNEL_TYPES[number];
  * Format: alphanumeric, hyphens allowed, 3-20 characters
  */
 export const AMAZON_TAG_REGEX = /^[a-zA-Z0-9\-]{3,20}$/;
+
+
+// ===== SUPPORT TICKET TYPES =====
+
+/**
+ * Support ticket subject categories
+ */
+export const SUPPORT_SUBJECTS = [
+  'technical',
+  'billing', 
+  'feature',
+  'account',
+  'general'
+] as const;
+
+export type SupportSubject = typeof SUPPORT_SUBJECTS[number];
+
+/**
+ * Support ticket interface
+ */
+export interface SupportTicket extends BaseDocument {
+  id: string;
+  ticketNumber: string; // Auto-generated unique identifier (e.g., "SUP-2025-001234")
+  userId?: string; // Optional - for logged-in users
+  name: string;
+  email: string;
+  subject: SupportSubject;
+  message: string;
+  status: 'open' | 'in-progress' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  assignedTo?: string; // Admin user ID who handles the ticket
+  
+  // Metadata for debugging and context
+  userAgent?: string;
+  url?: string; // Page where the ticket was submitted
+  ipAddress?: string; // Server will capture this
+  
+  // Timestamps
+  submittedAt: Date;
+  firstResponseAt?: Date;
+  resolvedAt?: Date;
+  
+  // Internal notes (not visible to user)
+  internalNotes?: string;
+  
+  // Statistics
+  responseCount: number; // Number of responses from support team
+}
+
+/**
+ * Request body for creating support ticket (from frontend)
+ */
+export interface CreateSupportTicketRequest {
+  name: string;
+  email: string;
+  subject: SupportSubject;
+  message: string;
+  userId?: string; // Optional - if user is logged in
+  timestamp: string; // ISO date string from frontend
+  userAgent?: string;
+  url?: string;
+}
+
+/**
+ * Response for support ticket operations
+ */
+export interface SupportTicketResponse {
+  id: string;
+  ticketNumber: string;
+  name: string;
+  email: string;
+  subject: SupportSubject;
+  message: string;
+  status: SupportTicket['status'];
+  priority: SupportTicket['priority'];
+  submittedAt: string;
+  userId?: string;
+}

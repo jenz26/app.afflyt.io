@@ -5,6 +5,7 @@ import { AffiliateLinkModel } from './AffiliateLink';
 import { ClickModel } from './Click';
 import { UserSettingModel } from './UserSetting';
 import { ConversionModel } from './Conversion';
+import { SupportTicketModel } from './SupportTicket'; // ✨ NEW: Support Ticket Model
 
 // Create module-specific logger
 const modelsLogger = createModuleLogger('models');
@@ -15,6 +16,7 @@ export class Models {
   public click: ClickModel;
   public userSetting: UserSettingModel;
   public conversion: ConversionModel;
+  public supportTicket: SupportTicketModel; // ✨ NEW: Support Ticket Model
 
   constructor(db: Db) {
     const startTime = Date.now();
@@ -28,6 +30,7 @@ export class Models {
       this.click = new ClickModel(db);
       this.userSetting = new UserSettingModel(db);
       this.conversion = new ConversionModel(db);
+      this.supportTicket = new SupportTicketModel(db); // ✨ NEW: Support Ticket Model
       
       const duration = Date.now() - startTime;
       
@@ -38,14 +41,16 @@ export class Models {
           'AffiliateLinkModel', 
           'ClickModel',
           'UserSettingModel',
-          'ConversionModel'
+          'ConversionModel',
+          'SupportTicketModel' // ✨ NEW
         ],
         collections: [
           'users',
           'affiliate_links',
           'clicks', 
           'user_settings',
-          'conversions'
+          'conversions',
+          'support_tickets' // ✨ NEW
         ]
       }, 'All application models initialized successfully');
       
@@ -81,7 +86,8 @@ export class Models {
       affiliateLink: { status: 'unknown', error: undefined as string | undefined },
       click: { status: 'unknown', error: undefined as string | undefined },
       userSetting: { status: 'unknown', error: undefined as string | undefined },
-      conversion: { status: 'unknown', error: undefined as string | undefined }
+      conversion: { status: 'unknown', error: undefined as string | undefined },
+      supportTicket: { status: 'unknown', error: undefined as string | undefined } // ✨ NEW
     };
 
     // Test each model with a simple operation
@@ -125,6 +131,15 @@ export class Models {
       modelChecks.conversion.error = (error as Error).message;
     }
 
+    // ✨ NEW: Support Ticket health check
+    try {
+      await this.supportTicket.findById('health-check-test');
+      modelChecks.supportTicket.status = 'healthy';
+    } catch (error) {
+      modelChecks.supportTicket.status = 'unhealthy';
+      modelChecks.supportTicket.error = (error as Error).message;
+    }
+
     const healthyCount = Object.values(modelChecks).filter(check => check.status === 'healthy').length;
     const totalCount = Object.values(modelChecks).length;
     
@@ -162,3 +177,4 @@ export * from './AffiliateLink';
 export * from './Click';
 export * from './UserSetting';
 export * from './Conversion';
+export * from './SupportTicket'; // ✨ NEW: Export Support Ticket Model
