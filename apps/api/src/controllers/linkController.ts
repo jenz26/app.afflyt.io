@@ -108,69 +108,99 @@ export class LinkController {
     }
   };
 
-  // Get user's affiliate links
-  getLinks = async (req: GetLinksRequest, res: Response): Promise<void> => {
-    const startTime = Date.now();
-    
-    try {
-      const user = req.user!;
-      // ✅ Query parameters already validated by Zod middleware
-      const { limit, offset, sortBy, sortOrder, isActive, tag } = req.query;
+  
+// Sostituire il metodo esistente con questa versione corretta
 
-      linkLogger.debug({ 
+// Get user's affiliate links
+getLinks = async (req: GetLinksRequest, res: Response): Promise<void> => {
+  const startTime = Date.now();
+  
+  try {
+    const user = req.user!;
+    // ✅ Query parameters already validated by Zod middleware
+    const { limit, offset, sortBy, sortOrder, isActive, tag } = req.query;
+
+    // 🚨 FIX: Convert string parameters to numbers for MongoDB
+    const numericLimit = typeof limit === 'string' ? parseInt(limit, 10) : (limit || 50);
+    const numericOffset = typeof offset === 'string' ? parseInt(offset, 10) : (offset || 0);
+
+    // 🚨 FIX: Validate converted numbers
+    if (isNaN(numericLimit) || numericLimit < 1 || numericLimit > 100) {
+      linkLogger.warn({ 
         userId: user.id, 
-        limit, 
-        offset,
-        sortBy,
-        sortOrder
-      }, 'User links request started');
-
-      const links = await this.models.affiliateLink.findByUserId(
-        user.id,
-        limit,
-        offset
-      );
-
-      const linksWithShortUrls = links.map(link => ({
-        hash: link.hash,
-        originalUrl: link.originalUrl,
-        shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${link.hash}`,
-        tag: link.tag,
-        amazonTagId: link.amazonTagId,
-        channelId: link.channelId,
-        source: link.source,
-        isActive: link.isActive,
-        clickCount: link.clickCount,
-        uniqueClickCount: link.uniqueClickCount,
-        conversionCount: link.conversionCount,
-        totalRevenue: link.totalRevenue,
-        expiresAt: link.expiresAt,
-        createdAt: link.createdAt,
-        updatedAt: link.updatedAt
-      }));
-
-      const responseData = {
-        links: linksWithShortUrls
-      };
-
-      const pagination = createPagination(limit, offset, linksWithShortUrls.length);
-
-      // Log successful links retrieval
-      linkLogger.info({ 
+        originalLimit: limit,
+        parsedLimit: numericLimit
+      }, 'Invalid limit parameter, using default');
+      // Use default instead of erroring
+      const safeLimit = 50;
+      const safeOffset = isNaN(numericOffset) ? 0 : Math.max(0, numericOffset);
+    } else if (isNaN(numericOffset) || numericOffset < 0) {
+      linkLogger.warn({ 
         userId: user.id, 
-        linkCount: linksWithShortUrls.length,
-        pagination: { limit, offset }
-      }, 'User links retrieved successfully');
-      logUtils.performance.requestEnd('GET', '/api/links', Date.now() - startTime, 200);
-
-      sendSuccess(res, responseData, { pagination });
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      linkLogger.error({ error, duration }, 'Error fetching user links');
-      logUtils.performance.requestEnd('GET', '/api/links', duration, 500);
-      sendInternalError(res);
+        originalOffset: offset,
+        parsedOffset: numericOffset
+      }, 'Invalid offset parameter, using 0');
     }
-  };
+
+    // Use safe, validated numeric values
+    const safeLimit = isNaN(numericLimit) || numericLimit < 1 || numericLimit > 100 ? 50 : numericLimit;
+    const safeOffset = isNaN(numericOffset) || numericOffset < 0 ? 0 : numericOffset;
+
+    linkLogger.debug({ 
+      userId: user.id, 
+      limit: safeLimit, 
+      offset: safeOffset,
+      sortBy,
+      sortOrder,
+      originalParams: { limit, offset }
+    }, 'User links request started');
+
+    const links = await this.models.affiliateLink.findByUserId(
+      user.id,
+      safeLimit,  // ✅ Now passing actual number
+      safeOffset  // ✅ Now passing actual number
+    );
+
+    const linksWithShortUrls = links.map(link => ({
+      hash: link.hash,
+      originalUrl: link.originalUrl,
+      shortUrl: `${process.env.BASE_URL || 'http://localhost:3001'}/r/${link.hash}`,
+      tag: link.tag,
+      amazonTagId: link.amazonTagId,
+      channelId: link.channelId,
+      source: link.source,
+      isActive: link.isActive,
+      clickCount: link.clickCount,
+      uniqueClickCount: link.uniqueClickCount,
+      conversionCount: link.conversionCount,
+      totalRevenue: link.totalRevenue,
+      expiresAt: link.expiresAt,
+      createdAt: link.createdAt,
+      updatedAt: link.updatedAt
+    }));
+
+    const responseData = {
+      links: linksWithShortUrls
+    };
+
+    const pagination = createPagination(safeLimit, safeOffset, linksWithShortUrls.length);
+
+    // Log successful links retrieval
+    linkLogger.info({ 
+      userId: user.id, 
+      linkCount: linksWithShortUrls.length,
+      pagination: { limit: safeLimit, offset: safeOffset }
+    }, 'User links retrieved successfully');
+    logUtils.performance.requestEnd('GET', '/api/links', Date.now() - startTime, 200);
+
+    sendSuccess(res, responseData, { pagination });
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    linkLogger.error({ error, duration }, 'Error fetching user links');
+    logUtils.performance.requestEnd('GET', '/api/links', duration, 500);
+    sendInternalError(res);
+  }
+};
 
   // Get link details by hash
   getLinkByHash = async (req: GetLinkByHashRequest, res: Response): Promise<void> => {
