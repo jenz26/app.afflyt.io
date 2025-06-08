@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { AMAZON_MARKETPLACES, CHANNEL_TYPES } from '../types';
 
-// ===== 🔒 VALIDATION SCHEMAS v1.8.5 - COMPLETE EDITION =====
+// ===== 🔒 VALIDATION SCHEMAS v1.9.2 - COMPLETE EDITION =====
 // Centralized validation schemas using Zod for type-safe input validation
 // 100% endpoint coverage - Zero manual validation
 
@@ -560,7 +560,11 @@ const clickMetadataSchema = z.object({
   device: z.enum(['mobile', 'tablet', 'desktop', 'unknown']).optional(),
   browser: z.string().max(50).optional(),
   sessionId: z.string().max(100).optional(),
-  timestamp: z.string().datetime().optional()
+  timestamp: z.string().datetime().optional(),
+  // NEW v1.9.2: Security check metadata
+  securityCheckShown: z.boolean().optional(),
+  securityCheckDuration: z.number().optional(),
+  userAgent: z.string().optional(),
 }).optional();
 
 /**
@@ -572,71 +576,25 @@ export const trackClickSchema = z.object({
   metadata: clickMetadataSchema
 });
 
-// ===== EXPORT ALL SCHEMAS ===== 
-
-export const validationSchemas = {
-  // ===== AUTH =====
-  register: registerSchema,
-  login: loginSchema,
-  sendMagicLink: sendMagicLinkSchema,
-  verifyMagicLink: verifyMagicLinkSchema,
-  passwordResetRequest: passwordResetRequestSchema,
-  passwordReset: passwordResetSchema,
-  
-  // ===== USER PROFILE =====
-  updateProfile: updateProfileSchema,
-  
-  // 🎨 NEW v1.8.9: USER BRANDING =====
-  updateUserBranding: updateUserBrandingSchema,
-  resetUserBranding: resetUserBrandingSchema,
-  getUserBranding: getUserBrandingSchema,
-  
-  // 🎯 NEW v1.8.9: CLICK TRACKING =====
-  trackClick: trackClickSchema,
-  
-  // ===== API KEYS =====
-  createApiKey: createApiKeySchema,
-  updateApiKey: updateApiKeySchema,
-  
-  // ===== AMAZON TAGS =====
-  createAmazonTag: createAmazonTagSchema,
-  updateAmazonTag: updateAmazonTagSchema,
-  
-  // ===== CHANNELS =====
-  createChannel: createChannelSchema,
-  updateChannel: updateChannelSchema,
-  
-  // ===== AFFILIATE LINKS =====
-  createAffiliateLink: createAffiliateLinkSchema,
-  updateAffiliateLink: updateAffiliateLinkSchema,
-  getLinks: getLinksQuerySchema,
-  linkStats: linkStatsQuerySchema,
-  
-  // ===== ANALYTICS =====
-  dateRange: dateRangeSchema,
-  analyticsQuery: analyticsQuerySchema,
-  topLinksQuery: topLinksQuerySchema,
-  heatmapQuery: heatmapQuerySchema,
-  
-  // ===== DASHBOARD =====
-  updateDashboardLayout: updateDashboardLayoutSchema,
-  
-  // ===== CONVERSIONS =====
-  trackConversion: trackConversionSchema,
-  updateConversion: updateConversionSchema,
-  userConversionsQuery: userConversionsQuerySchema,
-  
-  // ===== PARAMETERS =====
-  paramId: paramIdSchema,
-  paramKeyId: paramKeyIdSchema,
-  paramTagId: paramTagIdSchema,
-  paramChannelId: paramChannelIdSchema,
-  paramHash: paramHashSchema,
-  paramConversionId: paramConversionIdSchema,
-  
-  // ===== QUERY PARAMETERS =====
-  listQuery: listQuerySchema
-};
+// ===== 🎯 NEW v1.9.2: PIXEL TRACKING SCHEMA =====
+export const pixelTrackSchema = z.object({
+  hash: z.string()
+    .min(1, 'Hash is required')
+    .max(50, 'Hash too long'),
+  t: z.string()
+    .optional()
+    .refine((val) => !val || /^\d+$/.test(val), 'Invalid timestamp'),
+  ref: z.string()
+    .optional()
+    .refine((val) => !val || val.length <= 500, 'Referer too long'),
+  ua: z.string()
+    .optional()
+    .refine((val) => !val || val.length <= 500, 'User agent too long'),
+  // Cache busting e metadata opzionali
+  cb: z.string().optional(), // cache buster
+  sid: z.string().optional(), // session id
+  v: z.string().optional(), // version tracking
+});
 
 // ===== SUPPORT SCHEMAS =====
 
@@ -709,5 +667,74 @@ export const supportTicketsQuerySchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   search: trimmedString.optional() // Search in name, email, or ticket number
 });
+
+// ===== EXPORT ALL SCHEMAS =====
+
+export const validationSchemas = {
+  // ===== AUTH =====
+  register: registerSchema,
+  login: loginSchema,
+  sendMagicLink: sendMagicLinkSchema,
+  verifyMagicLink: verifyMagicLinkSchema,
+  passwordResetRequest: passwordResetRequestSchema,
+  passwordReset: passwordResetSchema,
+  
+  // ===== USER PROFILE =====
+  updateProfile: updateProfileSchema,
+  
+  // 🎨 NEW v1.8.9: USER BRANDING =====
+  updateUserBranding: updateUserBrandingSchema,
+  resetUserBranding: resetUserBrandingSchema,
+  getUserBranding: getUserBrandingSchema,
+  
+  // 🎯 NEW v1.8.9 + v1.9.2: CLICK TRACKING =====
+  trackClick: trackClickSchema,
+  
+  // 🎯 NEW v1.9.2: PIXEL TRACKING =====
+  pixelTrack: pixelTrackSchema,
+  
+  // ===== API KEYS =====
+  createApiKey: createApiKeySchema,
+  updateApiKey: updateApiKeySchema,
+  
+  // ===== AMAZON TAGS =====
+  createAmazonTag: createAmazonTagSchema,
+  updateAmazonTag: updateAmazonTagSchema,
+  
+  // ===== CHANNELS =====
+  createChannel: createChannelSchema,
+  updateChannel: updateChannelSchema,
+  
+  // ===== AFFILIATE LINKS =====
+  createAffiliateLink: createAffiliateLinkSchema,
+  updateAffiliateLink: updateAffiliateLinkSchema,
+  getLinks: getLinksQuerySchema,
+  linkStats: linkStatsQuerySchema,
+  
+  // ===== ANALYTICS =====
+  dateRange: dateRangeSchema,
+  analyticsQuery: analyticsQuerySchema,
+  topLinksQuery: topLinksQuerySchema,
+  heatmapQuery: heatmapQuerySchema,
+  
+  // ===== DASHBOARD =====
+  updateDashboardLayout: updateDashboardLayoutSchema,
+  
+  // ===== CONVERSIONS =====
+  trackConversion: trackConversionSchema,
+  updateConversion: updateConversionSchema,
+  userConversionsQuery: userConversionsQuerySchema,
+  
+  // ===== PARAMETERS =====
+  paramId: paramIdSchema,
+  paramKeyId: paramKeyIdSchema,
+  paramTagId: paramTagIdSchema,
+  paramChannelId: paramChannelIdSchema,
+  paramHash: paramHashSchema,
+  paramConversionId: paramConversionIdSchema,
+  
+  // ===== QUERY PARAMETERS =====
+  listQuery: listQuerySchema
+};
 
 export default validationSchemas;

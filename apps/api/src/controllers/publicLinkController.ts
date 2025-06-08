@@ -11,7 +11,7 @@ import {
 import { validationSchemas } from '../schemas';
 import { z } from 'zod';
 
-// ===== 🚀 NEW v1.8.9: PUBLIC LINK CONTROLLER =====
+// ===== 🚀 PUBLIC LINK CONTROLLER v1.9.2 =====
 // Handles preview pages and tracking for compliance-friendly redirects
 const publicLogger = createModuleLogger('public-link');
 
@@ -27,6 +27,11 @@ type DirectRedirectRequest = Request & {
   ip?: string;
   connection?: any;
   headers: any;
+};
+
+// 🎯 NEW v1.9.2: Type per pixel tracking request
+type TrackPixelRequest = Request & {
+  query: z.infer<typeof validationSchemas.pixelTrack>;
 };
 
 export class PublicLinkController {
@@ -316,6 +321,125 @@ export class PublicLinkController {
       publicLogger.error({ error, duration }, 'Error processing direct redirect');
       logUtils.performance.requestEnd('GET', '/api/public/redirect/:hash', duration, 500);
       sendInternalError(res);
+    }
+  };
+
+  // ===== 🎯 NEW v1.9.2: PIXEL TRACKING =====
+  /**
+   * GET /api/public/pixel
+   * Ritorna pixel 1x1 trasparente + tracking analytics asincrono
+   * @version v1.9.2 - Pixel tracking disaccoppiato
+   */
+  trackPixel = async (req: TrackPixelRequest, res: Response): Promise<void> => {
+    const startTime = Date.now();
+    
+    try {
+      // ✅ Query params già validati da Zod middleware
+      const { hash, t, ref, ua } = req.query;
+
+      publicLogger.debug({ 
+        linkHash: hash,
+        timestamp: t,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        referer: ref
+      }, 'Pixel tracking request started');
+
+      // Background tracking (non-blocking) - Fire and forget
+      setImmediate(async () => {
+        try {
+          // Find the affiliate link
+          const link = await this.models.affiliateLink.findByHash(hash as string);
+
+          if (!link || !link.isActive) {
+            publicLogger.warn({ 
+              linkHash: hash,
+              ip: req.ip
+            }, 'Pixel tracking: link not found or inactive');
+            return;
+          }
+
+          // Extract tracking information
+          const ipAddress = req.ip || 'unknown';
+          const userAgent = (ua as string) || req.headers['user-agent'] || 'unknown';
+          const referer = (ref as string) || req.headers.referer;
+
+          // Create lightweight click record for pixel tracking
+          const pixelData = {
+            linkHash: hash as string,
+            userId: link.userId,
+            ipAddress,
+            userAgent,
+            referer,
+            // Metadata per distinguere dal tracking normale
+            country: undefined,
+            device: undefined,
+            browser: undefined,
+            sessionId: `pixel_${t || Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          };
+
+          // Solo tracking, no redirect quindi meno critico se fallisce
+          await this.models.click.create(pixelData);
+
+          publicLogger.debug({ 
+            linkHash: hash,
+            userId: link.userId,
+            isPixelTrack: true
+          }, 'Pixel tracking completed successfully');
+
+        } catch (pixelError) {
+          // Log error ma non bloccare la response del pixel
+          publicLogger.warn({ 
+            error: pixelError,
+            linkHash: hash 
+          }, 'Pixel tracking failed silently');
+        }
+      });
+
+      // Ritorna immediatamente il pixel 1x1 trasparente
+      const pixel = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+        'base64'
+      );
+
+      const duration = Date.now() - startTime;
+      
+      publicLogger.info({ 
+        linkHash: hash,
+        pixelServed: true,
+        duration
+      }, 'Pixel served successfully');
+
+      logUtils.performance.requestEnd('GET', '/api/public/pixel', duration, 200);
+
+      res.set({
+        'Content-Type': 'image/png',
+        'Content-Length': pixel.length.toString(),
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'Access-Control-Allow-Origin': '*'
+      });
+
+      res.status(200).end(pixel);
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      publicLogger.error({ error, duration }, 'Error serving pixel');
+      logUtils.performance.requestEnd('GET', '/api/public/pixel', duration, 500);
+      
+      // Anche in caso di errore, serve un pixel per non rompere la UI
+      const fallbackPixel = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      
+      res.set({
+        'Content-Type': 'image/png',
+        'Cache-Control': 'no-cache'
+      });
+      
+      res.status(200).end(fallbackPixel);
     }
   };
 }
